@@ -69,9 +69,9 @@ class Fdtd:
         dex_dy = (grid.ex[i, j + 1, k] - grid.ex[i, j, k]) / dy
         dex_dz = (grid.ex[i, j, k + 1] - grid.ex[i, j, k]) / dz
         dey_dx = (grid.ey[i + 1, j, k] - grid.ey[i, j, k]) / dx
-        dey_dz = (grid.by[i, j, k + 1] - grid.ey[i, j, k]) / dz
-        dez_dx = (grid.bz[i + 1, j, k] - grid.ez[i, j, k]) / dx
-        dez_dy = (grid.bz[i, j + 1, k] - grid.ez[i, j, k]) / dy
+        dey_dz = (grid.ey[i, j, k + 1] - grid.ey[i, j, k]) / dz
+        dez_dx = (grid.ez[i + 1, j, k] - grid.ez[i, j, k]) / dx
+        dez_dy = (grid.ez[i, j + 1, k] - grid.ez[i, j, k]) / dy
 
         # Yee's scheme
         grid.bx[i, j, k] += cdt * (dey_dz - dez_dy)
