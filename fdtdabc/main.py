@@ -10,15 +10,15 @@ import numpy as np
 
 def init_solver():
     # Set up solver, for now parameters are hardcoded here
-    num_pml_cells = np.array([8, 8, 0])
-    return solver.fdtdpml.FdtdPML(num_pml_cells, 2)
+    num_pml_cells = np.array([12, 12, 0])
+    return solver.fdtdpml.FdtdPML(num_pml_cells)
     #return solver.fdtd.Fdtd()
 
 def init_grid(solver):
     # Set up grid, for now parameters are hardcoded here
     min_position = np.array([0.0, 0.0, 0.0])
     max_position = np.array([1.0, 1.0, 1.0])
-    num_internal_cells = np.array([32, 32, 3]) # modify this
+    num_internal_cells = np.array([128, 128, 1]) # modify this
     num_guard_cells = np.array(solver.get_guard_size()) # do not modify this
     gr = grid.yee.Yee_grid(min_position, max_position, num_internal_cells, num_guard_cells)
     # Set up initial conditions as a plane wave in Ey, Bz, runs along x in positive direction
@@ -63,24 +63,36 @@ def add_source(grid, iteration):
     duration_iterations = 10
     if iteration > duration_iterations:
         return
-    i = grid.num_cells[0] // 2
-    j = grid.num_cells[1] // 2
-    k = grid.num_cells[2] // 2
-    sin_arg = math.sin(2.0 * math.pi * float(iteration) / float(duration_iterations))
-    grid.ez[i, j, k] += math.pow(math.sin(sin_arg), 2.0)
+    diration_center = duration_iterations / 2
+    coeff_t = math.pow(math.sin(math.pi * (iteration - diration_center) / duration_iterations), 2)
+    width = [8, 8, 1]
+    i_center = grid.num_cells[0] // 2
+    j_center = grid.num_cells[1] // 2
+    k_center = grid.num_cells[2] // 2
+    for i in range(i_center - width[0] // 2, i_center + width[0] // 2 + 1):
+        coeff_x = math.pow(math.cos(math.pi * (i - i_center) / width[0]), 2)
+        for j in range(j_center - width[1] // 2, j_center + width[1] // 2 + 1):
+            coeff_y = math.pow(math.cos(math.pi * (j - j_center) / width[1]), 2)
+            for k in range(k_center - width[2] // 2, k_center + width[2] // 2 + 1):
+                coeff_z = math.pow(math.cos(math.pi * (k - k_center) / width[2]), 2)
+                grid.ez[i, j, k] += coeff_x * coeff_y * coeff_z * coeff_t
+                #print(str([i, j, k]) + ": " + str(coeff_x) + " " + str(coeff_y) + " " + str(coeff_z) + " " + str(coeff_t) + " ")
 
 def print_energy(grid, iteration):
-    period = 10
+    period = 20
     if iteration % period != 0:
         return
     energy = 0.0
     for i in range(grid.num_cells[0]):
         for j in range(grid.num_cells[1]):
-            for k in range(grid.num_cells[2]):
-                node_value = grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
-                node_value += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
-                energy += node_value * grid.steps[0] * grid.steps[1] * grid.steps[2]
-    energy *= 1e-7 / (8.0 * math.pi)
+            # for k in range(grid.num_cells[2]):
+            #     node_value = grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
+            #     node_value += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
+            #     energy += node_value * grid.steps[0] * grid.steps[1] * grid.steps[2]
+            k = grid.num_cells[2] // 2
+            energy += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
+            energy += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
+    energy *= grid.steps[0] * grid.steps[1] * grid.steps[2] * 1e-7 / (8.0 * math.pi)
     print(str(iteration) + " " + str(energy))
 
 def main():
@@ -93,8 +105,8 @@ def main():
     dt_cfl_limit = 1.0 / (c * math.sqrt(1.0 / grid.steps[0]**2 + 1.0 / grid.steps[1]**2 + 1.0 / grid.steps[2]**2) )
     dt = 0.99 * dt_cfl_limit
 
-    num_iterations = 100
-    plotting_period = 10 # period to make plots, set to 0 to disable plotting
+    num_iterations = 500
+    plotting_period = 20 # period to make plots, set to 0 to disable plotting
 
     plot = Plot(plotting_period)
     for iteration in range(num_iterations):
