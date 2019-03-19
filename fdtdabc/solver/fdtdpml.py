@@ -27,7 +27,7 @@ class FdtdPML:
         self.num_cells = grid.num_cells
         self.pml_width = self.num_pml_cells * grid.steps
         # Compute max absorption
-        r0 = 1e-8 # basic relative reflection
+        r0 = 1e-8 # basic relative reflection R(0)
         self.max_sigma = np.array([0.0, 0.0, 0.0])
         for d in range(3):
             if self.num_pml_cells[d]:
@@ -110,11 +110,14 @@ class FdtdPML:
         return sigma
 
     def update_e(self, grid, dt):
+        j_range = range(1, grid.num_cells[1])
+        if grid.num_cells[1] == 1:
+            j_range = range(1) # workaround for 1d
         k_range = range(1, grid.num_cells[2])
         if grid.num_cells[2] == 1:
-            k_range = range(1) # workaround for 2d
+            k_range = range(1) # workaround for 1d, 2d
         for i in range(1, grid.num_cells[0]):
-            for j in range(1, grid.num_cells[1]):
+            for j in j_range:
                 for k in k_range:
                     self.update_e_element(grid, dt, i, j, k)
 
@@ -126,12 +129,12 @@ class FdtdPML:
         dz = grid.steps[2]
 
         # Discretized partial derivatives of magnetic field (same as in standard FDTD)
-        dbx_dy = (grid.bx[i, j, k] - grid.bx[i, j - 1, k]) / dy
+        dbx_dy = (grid.bx[i, j, k] - grid.bx[i, (j - 1 + grid.num_cells[1]) % grid.num_cells[1], k]) / dy
         dbx_dz = (grid.bx[i, j, k] - grid.bx[i, j, (k - 1 + grid.num_cells[2]) % grid.num_cells[2]]) / dz
         dby_dx = (grid.by[i, j, k] - grid.by[i - 1, j, k]) / dx
         dby_dz = (grid.by[i, j, k] - grid.by[i, j, (k - 1 + grid.num_cells[2]) % grid.num_cells[2]]) / dz
         dbz_dx = (grid.bz[i, j, k] - grid.bz[i - 1, j, k]) / dx
-        dbz_dy = (grid.bz[i, j, k] - grid.bz[i, j - 1, k]) / dy
+        dbz_dy = (grid.bz[i, j, k] - grid.bz[i, (j - 1 + grid.num_cells[1]) % grid.num_cells[1], k]) / dy
 
         if self._e_is_internal[i, j, k]:
             # Standard Yee's scheme
@@ -152,11 +155,14 @@ class FdtdPML:
             grid.ez[i, j, k] = self.ezx[i, j, k] + self.ezy[i, j, k]
 
     def update_b(self, grid, dt):
+        j_range = range(grid.num_cells[1] - 1)
+        if grid.num_cells[1] == 1:
+            j_range = range(1) # workaround for 1d
         k_range = range(grid.num_cells[2] - 1)
         if grid.num_cells[2] == 1:
-            k_range = range(1) # workaround for 2d
+            k_range = range(1) # workaround for 1d, 2d
         for i in range(grid.num_cells[0] - 1):
-            for j in range(grid.num_cells[1] - 1):
+            for j in j_range:
                 for k in k_range:
                     self.update_b_element(grid, dt, i, j, k)
 
@@ -168,12 +174,12 @@ class FdtdPML:
         dz = grid.steps[2]
 
         # Discretized partial derivatives of electric field (same as in standard FDTD)
-        dex_dy = (grid.ex[i, j + 1, k] - grid.ex[i, j, k]) / dy
+        dex_dy = (grid.ex[i, (j + 1) % grid.num_cells[1], k] - grid.ex[i, j, k]) / dy
         dex_dz = (grid.ex[i, j, (k + 1) % grid.num_cells[2]] - grid.ex[i, j, k]) / dz
         dey_dx = (grid.ey[i + 1, j, k] - grid.ey[i, j, k]) / dx
         dey_dz = (grid.ey[i, j, (k + 1) % grid.num_cells[2]] - grid.ey[i, j, k]) / dz
         dez_dx = (grid.ez[i + 1, j, k] - grid.ez[i, j, k]) / dx
-        dez_dy = (grid.ez[i, j + 1, k] - grid.ez[i, j, k]) / dy
+        dez_dy = (grid.ez[i, (j + 1) % grid.num_cells[1], k] - grid.ez[i, j, k]) / dy
 
         if self._b_is_internal[i, j, k]:
             # Standard Yee's scheme
