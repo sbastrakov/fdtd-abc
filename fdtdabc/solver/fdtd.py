@@ -39,12 +39,15 @@ class Fdtd:
         dz = grid.steps[2]
 
         # Discretized partial derivatives of magnetic field (indexing is done to match grid.Yee_grid)
-        dbx_dy = (grid.bx[i, j, k] - grid.bx[i, (j - 1 + grid.num_cells[1]) % grid.num_cells[1], k]) / dy
-        dbx_dz = (grid.bx[i, j, k] - grid.bx[i, j, (k - 1 + grid.num_cells[2]) % grid.num_cells[2]]) / dz
-        dby_dx = (grid.by[i, j, k] - grid.by[i - 1, j, k]) / dx
-        dby_dz = (grid.by[i, j, k] - grid.by[i, j, (k - 1 + grid.num_cells[2]) % grid.num_cells[2]]) / dz
-        dbz_dx = (grid.bz[i, j, k] - grid.bz[i - 1, j, k]) / dx
-        dbz_dy = (grid.bz[i, j, k] - grid.bz[i, (j - 1 + grid.num_cells[1]) % grid.num_cells[1], k]) / dy
+        i_prev = (i - 1 + grid.num_cells[0]) % grid.num_cells[0]
+        j_prev = (j - 1 + grid.num_cells[1]) % grid.num_cells[1]
+        k_prev = (k - 1 + grid.num_cells[2]) % grid.num_cells[2]
+        dbx_dy = (grid.bx[i, j, k] - grid.bx[i, j_prev, k]) / dy
+        dbx_dz = (grid.bx[i, j, k] - grid.bx[i, j, k_prev]) / dz
+        dby_dx = (grid.by[i, j, k] - grid.by[i_prev, j, k]) / dx
+        dby_dz = (grid.by[i, j, k] - grid.by[i, j, k_prev]) / dz
+        dbz_dx = (grid.bz[i, j, k] - grid.bz[i_prev, j, k]) / dx
+        dbz_dy = (grid.bz[i, j, k] - grid.bz[i, j_prev, k]) / dy
 
         # Yee's scheme
         grid.ex[i, j, k] += cdt * (dbz_dy - dby_dz)
@@ -75,12 +78,15 @@ class Fdtd:
         dz = grid.steps[2]
 
         # Discretized partial derivatives of electric field (indexing is done to match grid.Yee_grid)
-        dex_dy = (grid.ex[i, (j + 1) % grid.num_cells[1], k] - grid.ex[i, j, k]) / dy
-        dex_dz = (grid.ex[i, j, (k + 1) % grid.num_cells[2]] - grid.ex[i, j, k]) / dz
+        i_next = (i + 1) % grid.num_cells[0]
+        j_next = (j + 1) % grid.num_cells[1]
+        k_next = (k + 1) % grid.num_cells[2]
+        dex_dy = (grid.ex[i, j_next, k] - grid.ex[i, j, k]) / dy
+        dex_dz = (grid.ex[i, j, k_next] - grid.ex[i, j, k]) / dz
         dey_dx = (grid.ey[i + 1, j, k] - grid.ey[i, j, k]) / dx
-        dey_dz = (grid.ey[i, j, (k + 1) % grid.num_cells[2]] - grid.ey[i, j, k]) / dz
+        dey_dz = (grid.ey[i, j, k_next] - grid.ey[i, j, k]) / dz
         dez_dx = (grid.ez[i + 1, j, k] - grid.ez[i, j, k]) / dx
-        dez_dy = (grid.ez[i, (j + 1) % grid.num_cells[1], k] - grid.ez[i, j, k]) / dy
+        dez_dy = (grid.ez[i, j_next, k] - grid.ez[i, j, k]) / dy
 
         # Yee's scheme
         grid.bx[i, j, k] += cdt * (dey_dz - dez_dy)
