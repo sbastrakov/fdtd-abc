@@ -3,7 +3,7 @@ class Fdtd:
     """Yee FDTD solver, operates on Yee grid, uses CGS units"""
 
     def get_guard_size(self):
-        return [1, 1, 1]
+        return [1, 1, 1] # this is for 3d only
 
     def run_iteration(self, grid, dt):
         # At start and end of the iterations E and B are given at the same time
@@ -12,8 +12,17 @@ class Fdtd:
         self.update_e(grid, dt)
         self.update_b(grid, 0.5 * dt)
 
-    def update_e(self, grid, dt):
+    def _get_guard_size_adjusted(self, grid):
         guard_size = self.get_guard_size()
+        # adjust for 1d and 2d cases
+        if grid.num_cells[1] == 1:
+            guard_size[1] = 0
+        if grid.num_cells[2] == 1:
+            guard_size[2] = 0
+        return guard_size
+
+    def update_e(self, grid, dt):
+        guard_size = self._get_guard_size_adjusted(grid)
         start_idx = guard_size
         end_idx = grid.num_cells - guard_size
         for i in range(start_idx[0], end_idx[0]):
@@ -30,12 +39,12 @@ class Fdtd:
         dz = grid.steps[2]
 
         # Discretized partial derivatives of magnetic field (indexing is done to match grid.Yee_grid)
-        dbx_dy = (grid.bx[i, j, k] - grid.bx[i, j - 1, k]) / dy
-        dbx_dz = (grid.bx[i, j, k] - grid.bx[i, j, k - 1]) / dz
+        dbx_dy = (grid.bx[i, j, k] - grid.bx[i, (j - 1 + grid.num_cells[1]) % grid.num_cells[1], k]) / dy
+        dbx_dz = (grid.bx[i, j, k] - grid.bx[i, j, (k - 1 + grid.num_cells[2]) % grid.num_cells[2]]) / dz
         dby_dx = (grid.by[i, j, k] - grid.by[i - 1, j, k]) / dx
-        dby_dz = (grid.by[i, j, k] - grid.by[i, j, k - 1]) / dz
+        dby_dz = (grid.by[i, j, k] - grid.by[i, j, (k - 1 + grid.num_cells[2]) % grid.num_cells[2]]) / dz
         dbz_dx = (grid.bz[i, j, k] - grid.bz[i - 1, j, k]) / dx
-        dbz_dy = (grid.bz[i, j, k] - grid.bz[i, j - 1, k]) / dy
+        dbz_dy = (grid.bz[i, j, k] - grid.bz[i, (j - 1 + grid.num_cells[1]) % grid.num_cells[1], k]) / dy
 
         # Yee's scheme
         grid.ex[i, j, k] += cdt * (dbz_dy - dby_dz)
@@ -49,7 +58,7 @@ class Fdtd:
         self._apply_component_bc(grid.ez, grid.num_internal_cells, grid.num_guard_cells)
 
     def update_b(self, grid, dt):
-        guard_size = self.get_guard_size()
+        guard_size = self._get_guard_size_adjusted(grid)
         start_idx = guard_size
         end_idx = grid.num_cells - guard_size
         for i in range(start_idx[0], end_idx[0]):
@@ -66,12 +75,12 @@ class Fdtd:
         dz = grid.steps[2]
 
         # Discretized partial derivatives of electric field (indexing is done to match grid.Yee_grid)
-        dex_dy = (grid.ex[i, j + 1, k] - grid.ex[i, j, k]) / dy
-        dex_dz = (grid.ex[i, j, k + 1] - grid.ex[i, j, k]) / dz
+        dex_dy = (grid.ex[i, (j + 1) % grid.num_cells[1], k] - grid.ex[i, j, k]) / dy
+        dex_dz = (grid.ex[i, j, (k + 1) % grid.num_cells[2]] - grid.ex[i, j, k]) / dz
         dey_dx = (grid.ey[i + 1, j, k] - grid.ey[i, j, k]) / dx
-        dey_dz = (grid.ey[i, j, k + 1] - grid.ey[i, j, k]) / dz
+        dey_dz = (grid.ey[i, j, (k + 1) % grid.num_cells[2]] - grid.ey[i, j, k]) / dz
         dez_dx = (grid.ez[i + 1, j, k] - grid.ez[i, j, k]) / dx
-        dez_dy = (grid.ez[i, j + 1, k] - grid.ez[i, j, k]) / dy
+        dez_dy = (grid.ez[i, (j + 1) % grid.num_cells[1], k] - grid.ez[i, j, k]) / dy
 
         # Yee's scheme
         grid.bx[i, j, k] += cdt * (dey_dz - dez_dy)
