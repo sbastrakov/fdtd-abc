@@ -2,8 +2,10 @@
 class Fdtd:
     """Yee FDTD solver, operates on Yee grid, uses CGS units"""
 
-    def get_guard_size(self):
-        return [1, 1, 1] # this is for 3d only
+    def get_guard_size(self, num_internal_cells):
+        guard_size = [1, 1, 1]
+        guard_size[num_internal_cells == 1] = 0
+        return guard_size
 
     def run_iteration(self, grid, dt):
         # At start and end of the iterations E and B are given at the same time
@@ -12,17 +14,8 @@ class Fdtd:
         self.update_e(grid, dt)
         self.update_b(grid, 0.5 * dt)
 
-    def _get_guard_size_adjusted(self, grid):
-        guard_size = self.get_guard_size()
-        # adjust for 1d and 2d cases
-        if grid.num_cells[1] == 1:
-            guard_size[1] = 0
-        if grid.num_cells[2] == 1:
-            guard_size[2] = 0
-        return guard_size
-
     def update_e(self, grid, dt):
-        guard_size = self._get_guard_size_adjusted(grid)
+        guard_size = self.get_guard_size(grid.num_internal_cells)
         start_idx = guard_size
         end_idx = grid.num_cells - guard_size
         for i in range(start_idx[0], end_idx[0]):
@@ -61,7 +54,7 @@ class Fdtd:
         self._apply_component_bc(grid.ez, grid.num_internal_cells, grid.num_guard_cells)
 
     def update_b(self, grid, dt):
-        guard_size = self._get_guard_size_adjusted(grid)
+        guard_size = self.get_guard_size(grid.num_internal_cells)
         start_idx = guard_size
         end_idx = grid.num_cells - guard_size
         for i in range(start_idx[0], end_idx[0]):

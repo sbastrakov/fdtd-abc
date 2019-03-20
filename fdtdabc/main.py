@@ -10,8 +10,8 @@ import numpy as np
 
 def init_solver():
     # Set up solver, for now parameters are hardcoded here
-    num_pml_cells = np.array([12, 12, 0])
-    return solver.fdtdpml.FdtdPML(num_pml_cells)
+    num_pml_cells = np.array([12, 12, 12])
+    return solver.fdtdpml.FdtdPML(num_pml_cells, 4)
     #return solver.fdtd.Fdtd()
 
 def init_grid(solver):
@@ -19,7 +19,7 @@ def init_grid(solver):
     min_position = np.array([0.0, 0.0, 0.0])
     max_position = np.array([1.0, 1.0, 1.0])
     num_internal_cells = np.array([128, 128, 1]) # modify this
-    num_guard_cells = np.array(solver.get_guard_size()) # do not modify this
+    num_guard_cells = np.array(solver.get_guard_size(num_internal_cells)) # do not modify this
     gr = grid.yee.Yee_grid(min_position, max_position, num_internal_cells, num_guard_cells)
     # Set up initial conditions as a plane wave in Ey, Bz, runs along x in positive direction
     #num_periods = 4
@@ -60,6 +60,10 @@ class Plot:
 
 
 def add_source(grid, iteration):
+    #add_soft_source(grid, iteration)
+    add_hard_source(grid, iteration)
+
+def add_soft_source(grid, iteration):
     duration_iterations = 10
     if iteration > duration_iterations:
         return
@@ -76,13 +80,29 @@ def add_source(grid, iteration):
             for k in range(k_center - width[2] // 2, k_center + width[2] // 2 + 1):
                 coeff_z = math.pow(math.cos(math.pi * (k - k_center) / width[2]), 2)
                 grid.ez[i, j, k] += coeff_x * coeff_y * coeff_z * coeff_t
-                #print(str([i, j, k]) + ": " + str(coeff_x) + " " + str(coeff_y) + " " + str(coeff_z) + " " + str(coeff_t) + " ")
+
+def add_hard_source(grid, iteration):
+    """(6.46) from Taflove 2nd ed."""
+    duration_iterations = 40
+    diration_center = duration_iterations / 2
+    i_center = grid.num_cells[0] // 2
+    j_center = grid.num_cells[1] // 2
+    k_center = grid.num_cells[2] // 2
+    value = (10.0 - 15 * math.cos(math.pi * iteration / diration_center) + 6 * math.cos(2.0 * math.pi * iteration / diration_center) - math.cos(3.0 * math.pi * iteration / diration_center)) / 32.0
+    if iteration > duration_iterations:
+        value = 0.0
+    grid.ez[i_center, j_center, k_center] = value
+    #for j in range(grid.num_cells[1]):
+    #    grid.ez[i_center, j, k_center] = 0.0
 
 def print_energy(grid, iteration):
     period = 20
     if iteration % period != 0:
         return
     energy = 0.0
+    energy_internal = 0.0
+    energy_ez = 0.0
+    energy_ez_internal = 0.0
     for i in range(grid.num_cells[0]):
         for j in range(grid.num_cells[1]):
             # for k in range(grid.num_cells[2]):
@@ -92,8 +112,16 @@ def print_energy(grid, iteration):
             k = grid.num_cells[2] // 2
             energy += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
             energy += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
+            energy_ez += grid.ez[i, j, k] * grid.ez[i, j, k]
+            if (i >= grid.num_guard_cells[0]) and (i < grid.num_cells[0] - grid.num_guard_cells[0]) and (j >= grid.num_guard_cells[1]) and (j < grid.num_cells[1] - grid.num_guard_cells[1]):
+                energy_internal += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
+                energy_internal += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
+                energy_ez_internal += grid.ez[i, j, k] * grid.ez[i, j, k]
     energy *= grid.steps[0] * grid.steps[1] * grid.steps[2] * 1e-7 / (8.0 * math.pi)
-    print(str(iteration) + " " + str(energy))
+    energy_internal *= grid.steps[0] * grid.steps[1] * grid.steps[2] * 1e-7 / (8.0 * math.pi)
+    energy_ez *= grid.steps[0] * grid.steps[1] * grid.steps[2] * 1e-7 / (8.0 * math.pi)
+    energy_ez_internal *= grid.steps[0] * grid.steps[1] * grid.steps[2] * 1e-7 / (8.0 * math.pi)
+    print(str(iteration) + " " + str(energy) + " " + str(energy_internal) + " " + str(energy_ez) + " " + str(energy_ez_internal))
 
 def main():
     solver = init_solver()
@@ -103,10 +131,11 @@ def main():
 
     # set time step to be 1% below CFL for Yee solver
     dt_cfl_limit = 1.0 / (c * math.sqrt(1.0 / grid.steps[0]**2 + 1.0 / grid.steps[1]**2 + 1.0 / grid.steps[2]**2) )
-    dt = 0.99 * dt_cfl_limit
+    ratio_of_cfl_limit = 0.99
+    dt = ratio_of_cfl_limit * dt_cfl_limit
 
-    num_iterations = 500
-    plotting_period = 20 # period to make plots, set to 0 to disable plotting
+    num_iterations = 300
+    plotting_period = 10 # period to make plots, set to 0 to disable plotting
 
     plot = Plot(plotting_period)
     for iteration in range(num_iterations):

@@ -13,8 +13,10 @@ class FdtdPML:
         self.exponential_time_stepping = exponential_time_stepping
         self._initialized = False
 
-    def get_guard_size(self):
-        return self.num_pml_cells
+    def get_guard_size(self, num_internal_cells):
+        guard_size = self.num_pml_cells
+        guard_size[num_internal_cells == 1] = 0
+        return guard_size
 
     def run_iteration(self, grid, dt):
         # Late initialization, currently only works if grid is the same all the time
@@ -25,8 +27,8 @@ class FdtdPML:
         self.update_b(grid, 0.5 * dt)
 
     def _init(self, grid, dt):
-        self.num_cells = grid.num_cells
-        self.pml_width = self.num_pml_cells * grid.steps
+        # for 1d and 2d cases disable PML along the fake dimensions
+        self.num_pml_cells[grid.num_cells == 1] = 0
         self._init_max_sigma(grid)
         # Initialize split fields
         self.exy = self._create_split_field(grid.ex)
@@ -88,7 +90,7 @@ class FdtdPML:
             for j in range(grid.num_cells[1]):
                 for k in range(grid.num_cells[2]):
                     sigma_index = np.array([i, j, k]) + shift
-                    sigma = self._get_sigma(sigma_index)
+                    sigma = self._get_sigma(grid, sigma_index)
                     if self.exponential_time_stepping:
                         decay_coeff = np.exp(-sigma * cdt)
                     else:
@@ -108,7 +110,7 @@ class FdtdPML:
                     diff_coeff_y[i, j, k] = diff_coeff[1]
                     diff_coeff_z[i, j, k] = diff_coeff[2]
 
-    def _get_sigma(self, index):
+    def _get_sigma(self, grid, index):
         """Index is float 3d array, values normalized to cell size"""
         # This needs to be a polynomial growth from 0 at border with internal area to max_sigma at outer border
         sigma = np.array([0.0, 0.0, 0.0])
@@ -116,26 +118,17 @@ class FdtdPML:
             coeff = 0.0
             if index[d] < self.num_pml_cells[d]:
                 coeff = float(self.num_pml_cells[d] - index[d]) / self.num_pml_cells[d]
-            if index[d] > self.num_cells[d] - self.num_pml_cells[d]:
-                coeff = float(index[d] - self.num_cells[d] + self.num_pml_cells[d]) / self.num_pml_cells[d]
+            if index[d] > grid.num_cells[d] - self.num_pml_cells[d]:
+                coeff = float(index[d] - grid.num_cells[d] + self.num_pml_cells[d]) / self.num_pml_cells[d]
             if coeff < 0.0:
                 coeff = 0.0
             sigma[d] = self.max_sigma[d] * math.pow(coeff, self.order)
         return sigma
 
     def update_e(self, grid, dt):
-        start_idx = np.array([0, 0, 0])
-        start_idx[self.num_pml_cells > 0] = 1
-        end_idx = grid.num_cells
-        index_ranges = []
-        for d in range(3):
-            r = range(start_idx[d], end_idx[d])
-            if grid.num_cells[d] == 1:
-                r = range(1)
-            index_ranges.append(r)
-        for i in index_ranges[0]:
-            for j in index_ranges[1]:
-                for k in index_ranges[2]:
+        for i in range(0, grid.num_cells[0]):
+            for j in range(0, grid.num_cells[1]):
+                for k in range(0, grid.num_cells[2]):
                     self.update_e_element(grid, dt, i, j, k)
 
     def update_e_element(self, grid, dt, i, j, k):
@@ -156,6 +149,17 @@ class FdtdPML:
         dbz_dx = (grid.bz[i, j, k] - grid.bz[i_prev, j, k]) / dx
         dbz_dy = (grid.bz[i, j, k] - grid.bz[i, j_prev, k]) / dy
 
+        # special case for boundary indexes in PML: the external field values are zero
+        if (i == 0) and (self.num_pml_cells[0] > 0):
+            dby_dx = (grid.by[i, j, k] - 0.0) / dx
+            dbz_dx = (grid.bz[i, j, k] - 0.0) / dx
+        if (j == 0) and (self.num_pml_cells[1] > 0):
+            dbx_dy = (grid.bx[i, j, k] - 0.0) / dy
+            dbz_dy = (grid.bz[i, j, k] - 0.0) / dy
+        if (k == 0) and (self.num_pml_cells[2] > 0):
+            dbx_dz = (grid.bx[i, j, k] - 0.0) / dz
+            dby_dz = (grid.by[i, j, k] - 0.0) / dz
+
         if self._e_is_internal[i, j, k]:
             # Standard Yee's scheme
             grid.ex[i, j, k] += cdt * (dbz_dy - dby_dz)
@@ -175,18 +179,9 @@ class FdtdPML:
             grid.ez[i, j, k] = self.ezx[i, j, k] + self.ezy[i, j, k]
 
     def update_b(self, grid, dt):
-        start_idx = [0, 0, 0]
-        end_idx = np.array(grid.num_cells)
-        end_idx[self.num_pml_cells > 0] = end_idx[self.num_pml_cells > 0] - 1
-        index_ranges = []
-        for d in range(3):
-            r = range(start_idx[d], end_idx[d])
-            if grid.num_cells[d] == 1:
-                r = range(1)
-            index_ranges.append(r)
-        for i in index_ranges[0]:
-            for j in index_ranges[1]:
-                for k in index_ranges[2]:
+        for i in range(0, grid.num_cells[0]):
+            for j in range(0, grid.num_cells[1]):
+                for k in range(0, grid.num_cells[2]):
                     self.update_b_element(grid, dt, i, j, k)
 
     def update_b_element(self, grid, dt, i, j, k):
@@ -197,6 +192,7 @@ class FdtdPML:
         dz = grid.steps[2]
 
         # Discretized partial derivatives of electric field (same as in standard FDTD)
+        # with periodic boundaries
         i_next = (i + 1) % grid.num_cells[0]
         j_next = (j + 1) % grid.num_cells[1]
         k_next = (k + 1) % grid.num_cells[2]
@@ -206,6 +202,17 @@ class FdtdPML:
         dey_dz = (grid.ey[i, j, k_next] - grid.ey[i, j, k]) / dz
         dez_dx = (grid.ez[i_next, j, k] - grid.ez[i, j, k]) / dx
         dez_dy = (grid.ez[i, j_next, k] - grid.ez[i, j, k]) / dy
+
+        # special case for boundary indexes in PML: the external field values are zero
+        if (i == grid.num_cells[0] - 1) and (self.num_pml_cells[0] > 0):
+            dey_dx = (0.0 - grid.ey[i, j, k]) / dx
+            dez_dx = (0.0 - grid.ez[i, j, k]) / dx
+        if (j == grid.num_cells[1] - 1) and (self.num_pml_cells[1] > 0):
+            dex_dy = (0.0 - grid.ex[i, j, k]) / dy
+            dez_dy = (0.0 - grid.ez[i, j, k]) / dy
+        if (k == grid.num_cells[2] - 1) and (self.num_pml_cells[2] > 0):
+            dex_dz = (0.0 - grid.ex[i, j, k]) / dz
+            dey_dz = (0.0 - grid.ey[i, j, k]) / dz
 
         if self._b_is_internal[i, j, k]:
             # Standard Yee's scheme
