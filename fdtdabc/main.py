@@ -1,6 +1,6 @@
 import grid.yee
 import solver.fdtd
-import solver.fdtdpml
+import solver.pml_sf
 import initialconditions
 
 import math
@@ -11,7 +11,7 @@ import numpy as np
 def init_solver():
     # Set up solver, for now parameters are hardcoded here
     num_pml_cells = np.array([12, 12, 12])
-    return solver.fdtdpml.FdtdPML(num_pml_cells, 4)
+    return solver.pml_sf.PML_SF(num_pml_cells, 4)
     #return solver.fdtd.Fdtd()
 
 def init_grid(solver):

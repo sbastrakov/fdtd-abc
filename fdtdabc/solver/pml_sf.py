@@ -4,8 +4,8 @@ import copy
 import math
 
 
-class FdtdPML:
-    """Yee FDTD solver with PML, operates on Yee grid with split fields stored, uses CGS units"""
+class PML_SF:
+    """Yee FDTD solver with split-field PML, operates on Yee grid with split fields stored, uses CGS units"""
 
     def __init__(self, num_pml_cells, order = 4, exponential_time_stepping = False):
         self.num_pml_cells = num_pml_cells
