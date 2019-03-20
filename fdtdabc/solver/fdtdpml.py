@@ -27,12 +27,7 @@ class FdtdPML:
     def _init(self, grid, dt):
         self.num_cells = grid.num_cells
         self.pml_width = self.num_pml_cells * grid.steps
-        # Compute max absorption
-        r0 = 1e-7 # basic relative reflection R(0)
-        self.max_sigma = np.array([0.0, 0.0, 0.0])
-        for d in range(3):
-            if self.num_pml_cells[d]:
-                self.max_sigma[d] = -math.log(r0) * (self.order + 1) / (2 * self.pml_width[d])
+        self._init_max_sigma(grid)
         # Initialize split fields
         self.exy = self._create_split_field(grid.ex)
         self.exz = self._create_split_field(grid.ex)
@@ -48,6 +43,20 @@ class FdtdPML:
         self.bzy = self._create_split_field(grid.bz)
         self._init_coeffs(grid, dt)
         self._initialized = True
+
+    def _init_max_sigma(self, grid):
+        opt_sigma = self._get_opt_sigma(grid)
+        sigma_opt_ratio = 1.0
+        self.max_sigma = sigma_opt_ratio * opt_sigma
+
+    def _get_opt_sigma(self, grid):
+        opt_sigma = np.array([0.0, 0.0, 0.0])
+        for d in range(3):
+            if self.num_pml_cells[d]:
+                opt_sigma[d] = 0.8 * (self.order + 1) / grid.steps[d]
+                # equation (15) in CONVOLUTION PML (CPML): AN EFFICIENT FDTD IMPLEMENTATION OF THE CFS – PML FOR ARBITRARY MEDIA
+                # basically the same is (17) in  Performance advantages of CPML over UPML absorbing boundary conditions in FDTD algorithm
+        return opt_sigma
 
     def _create_split_field(self, full_field):
         split_field = copy.deepcopy(full_field)
@@ -83,8 +92,9 @@ class FdtdPML:
                     if self.exponential_time_stepping:
                         decay_coeff = np.exp(-sigma * cdt)
                     else:
-                        decay_coeff = 1.0 - sigma * cdt
-                    diff_coeff = np.array([cdt, cdt, cdt])
+                        ##decay_coeff = 1.0 - sigma * cdt
+                        decay_coeff = (1.0 - 0.5 * sigma * cdt) / (1.0 + 0.5 * sigma * cdt)
+                    diff_coeff = np.array([cdt, cdt, cdt]) / (1.0 + 0.5 * sigma * cdt)
                     is_internal[i, j, k] = 1.0
                     for d in range(3):
                         if sigma[d]:
