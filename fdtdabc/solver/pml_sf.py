@@ -7,10 +7,9 @@ import math
 class PML_SF:
     """Yee FDTD solver with split-field PML, operates on Yee grid with split fields stored, uses CGS units"""
 
-    def __init__(self, num_pml_cells, order = 4, exponential_time_stepping = False):
+    def __init__(self, num_pml_cells, order = 4):
         self.num_pml_cells = num_pml_cells
         self.order = order
-        self.exponential_time_stepping = exponential_time_stepping
         self._initialized = False
 
     def get_guard_size(self, num_internal_cells):
@@ -91,17 +90,11 @@ class PML_SF:
                 for k in range(grid.num_cells[2]):
                     sigma_index = np.array([i, j, k]) + shift
                     sigma = self._get_sigma(grid, sigma_index)
-                    if self.exponential_time_stepping:
-                        decay_coeff = np.exp(-sigma * cdt)
-                    else:
-                        ##decay_coeff = 1.0 - sigma * cdt
-                        decay_coeff = (1.0 - 0.5 * sigma * cdt) / (1.0 + 0.5 * sigma * cdt)
+                    decay_coeff = (1.0 - 0.5 * sigma * cdt) / (1.0 + 0.5 * sigma * cdt)
                     diff_coeff = np.array([cdt, cdt, cdt]) / (1.0 + 0.5 * sigma * cdt)
                     is_internal[i, j, k] = 1.0
                     for d in range(3):
                         if sigma[d]:
-                            if self.exponential_time_stepping:
-                                diff_coeff[d] = (1.0 - decay_coeff[d]) / sigma[d]
                             is_internal[i, j, k] = 0.0
                     decay_coeff_x[i, j, k] = decay_coeff[0]
                     decay_coeff_y[i, j, k] = decay_coeff[1]
