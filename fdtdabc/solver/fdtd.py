@@ -3,12 +3,14 @@ import scipy.constants
 
 
 class Fdtd:
-    """Yee FDTD solver, operates on Yee grid, uses SI units"""
+    """
+    Yee's FDTD solver with periodic boundary conditions
+    Operates on Yee grid
+    All units in SI
+    """
 
     def get_guard_size(self, num_internal_cells):
-        guard_size = np.array([1, 1, 1])
-        guard_size[np.where(num_internal_cells == 1)] = 0
-        return guard_size
+        return np.array([0, 0, 0])
 
     def run_iteration(self, grid, dt):
         # At start and end of the iterations E and B are given at the same time
@@ -18,14 +20,10 @@ class Fdtd:
         self.update_b(grid, 0.5 * dt)
 
     def update_e(self, grid, dt):
-        guard_size = self.get_guard_size(grid.num_internal_cells)
-        start_idx = guard_size
-        end_idx = grid.num_cells - guard_size
-        for i in range(start_idx[0], end_idx[0]):
-            for j in range(start_idx[1], end_idx[1]):
-                for k in range(start_idx[2], end_idx[2]):
+        for i in range(grid.num_cells[0]):
+            for j in range(grid.num_cells[1]):
+                for k in range(grid.num_cells[2]):
                     self.update_e_element(grid, dt, i, j, k)
-        self.apply_e_bc(grid)
 
     def update_e_element(self, grid, dt, i, j, k):
         # Discretized partial derivatives of magnetic field (indexing is done to match grid.Yee_grid)
@@ -42,27 +40,17 @@ class Fdtd:
         dbz_dx = (grid.bz[i, j, k] - grid.bz[i_prev, j, k]) / dx
         dbz_dy = (grid.bz[i, j, k] - grid.bz[i, j_prev, k]) / dy
 
-        # Yee's scheme: E_new = E_old + dt/(eps0 * mu0) * rot(B)
-        scaled_dt = dt / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
-        grid.ex[i, j, k] += scaled_dt * (dbz_dy - dby_dz)
-        grid.ey[i, j, k] += scaled_dt * (dbx_dz - dbz_dx)
-        grid.ez[i, j, k] += scaled_dt * (dby_dx - dbx_dy)
-
-    def apply_e_bc(self, grid):
-        """Apply periodic boundary conditions for the electric field"""
-        self._apply_component_bc(grid.ex, grid.num_internal_cells, grid.num_guard_cells)
-        self._apply_component_bc(grid.ey, grid.num_internal_cells, grid.num_guard_cells)
-        self._apply_component_bc(grid.ez, grid.num_internal_cells, grid.num_guard_cells)
+        # Yee's scheme: E_new = E_old + dt/(eps0 * mu0) * rot(B) = E_old + coeff * rot(B)
+        coeff = dt / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
+        grid.ex[i, j, k] += coeff * (dbz_dy - dby_dz)
+        grid.ey[i, j, k] += coeff * (dbx_dz - dbz_dx)
+        grid.ez[i, j, k] += coeff * (dby_dx - dbx_dy)
 
     def update_b(self, grid, dt):
-        guard_size = self.get_guard_size(grid.num_internal_cells)
-        start_idx = guard_size
-        end_idx = grid.num_cells - guard_size
-        for i in range(start_idx[0], end_idx[0]):
-            for j in range(start_idx[1], end_idx[1]):
-                for k in range(start_idx[2], end_idx[2]):
+        for i in range(grid.num_cells[0]):
+            for j in range(grid.num_cells[1]):
+                for k in range(grid.num_cells[2]):
                     self.update_b_element(grid, dt, i, j, k)
-        self.apply_b_bc(grid)
 
     def update_b_element(self, grid, dt, i, j, k):
         # Discretized partial derivatives of electric field (indexing is done to match grid.Yee_grid)
@@ -74,58 +62,13 @@ class Fdtd:
         k_next = (k + 1) % grid.num_cells[2]
         dex_dy = (grid.ex[i, j_next, k] - grid.ex[i, j, k]) / dy
         dex_dz = (grid.ex[i, j, k_next] - grid.ex[i, j, k]) / dz
-        dey_dx = (grid.ey[i + 1, j, k] - grid.ey[i, j, k]) / dx
+        dey_dx = (grid.ey[i_next, j, k] - grid.ey[i, j, k]) / dx
         dey_dz = (grid.ey[i, j, k_next] - grid.ey[i, j, k]) / dz
-        dez_dx = (grid.ez[i + 1, j, k] - grid.ez[i, j, k]) / dx
+        dez_dx = (grid.ez[i_next, j, k] - grid.ez[i, j, k]) / dx
         dez_dy = (grid.ez[i, j_next, k] - grid.ez[i, j, k]) / dy
 
-        # Yee's scheme: B_new = B_old - dt * rot(E)
-        grid.bx[i, j, k] += dt * (dey_dz - dez_dy)
-        grid.by[i, j, k] += dt * (dez_dx - dex_dz)
-        grid.bz[i, j, k] += dt * (dex_dy - dey_dx)
-
-    def apply_b_bc(self, grid):
-        """Apply periodic boundary conditions for the magnetic field"""
-        self._apply_component_bc(grid.bx, grid.num_internal_cells, grid.num_guard_cells)
-        self._apply_component_bc(grid.by, grid.num_internal_cells, grid.num_guard_cells)
-        self._apply_component_bc(grid.bz, grid.num_internal_cells, grid.num_guard_cells)
-
-    def _apply_component_bc(self, scalar_field, num_internal_cells, num_guard_cells):
-        """Apply periodic boundary conditions for a field component"""
-
-        num_cells = num_internal_cells + num_guard_cells * 2
-        internal_start = num_guard_cells
-        internal_end = num_cells - num_guard_cells
-
-        # x axis guard: process only internal area in y, z
-        for j in range(internal_start[1], internal_end[1]):
-            for k in range(internal_start[2], internal_end[2]):
-                for i in range (num_guard_cells[0]):
-                    period = num_internal_cells[0]
-                    guard_size = num_guard_cells[0]
-                    # left guard: copy from right of internal area to guard
-                    scalar_field[i, j, k] = scalar_field[i + period, j, k]
-                    # right guard: copy from left of internal area to guard
-                    scalar_field[i + guard_size + period, j, k] = scalar_field[i + guard_size, j, k]
-
-        # y axis guard: process all in x, only internal in z
-        for i in range(num_cells[0]):
-            for k in range(internal_start[2], internal_end[2]):
-                for j in range (num_guard_cells[1]):
-                    period = num_internal_cells[1]
-                    guard_size = num_guard_cells[1]
-                    # left guard: copy from right of internal area to guard
-                    scalar_field[i, j, k] = scalar_field[i, j + period, k]
-                    # right guard: copy from left of internal area to guard
-                    scalar_field[i, j + guard_size + period, k] = scalar_field[i, j + guard_size, k]
-
-        # z axis guard: process all in x, y
-        for i in range(num_cells[0]):
-            for j in range(num_cells[1]):
-                for k in range (num_guard_cells[2]):
-                    period = num_internal_cells[2]
-                    guard_size = num_guard_cells[2]
-                    # left guard: copy from right of internal area to guard
-                    scalar_field[i, j, k] = scalar_field[i, j, k + period]
-                    # right guard: copy from left of internal area to guard
-                    scalar_field[i, j, k + guard_size + period] = scalar_field[i, j, k + guard_size]
+        # Yee's scheme: B_new = B_old - dt * rot(E) = B_old + coeff * rot(E)
+        coeff = -dt
+        grid.bx[i, j, k] += coeff * (dez_dy - dey_dz)
+        grid.by[i, j, k] += coeff * (dex_dz - dez_dx)
+        grid.bz[i, j, k] += coeff * (dey_dx - dex_dy)
