@@ -90,8 +90,9 @@ class PML_SF:
                 for k in range(grid.num_cells[2]):
                     sigma_index = np.array([i, j, k]) + shift
                     sigma = self._get_sigma(grid, sigma_index)
-                    decay_coeff = (1.0 - 0.5 * sigma * cdt) / (1.0 + 0.5 * sigma * cdt)
-                    diff_coeff = np.array([cdt, cdt, cdt]) / (1.0 + 0.5 * sigma * cdt)
+                    #decay_coeff = (1.0 - 0.5 * sigma * cdt) / (1.0 + 0.5 * sigma * cdt)
+                    decay_coeff = (1.0 - 2.0 * math.pi * sigma * cdt) / (1.0 + 2.0 * math.pi * sigma * cdt)
+                    diff_coeff = np.array([cdt, cdt, cdt]) / (1.0 + 2.0 * math.pi * sigma * cdt)
                     is_internal[i, j, k] = 1.0
                     for d in range(3):
                         if sigma[d]:
