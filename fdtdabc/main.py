@@ -8,13 +8,14 @@ import math
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
+import scipy.constants
 
 def init_solver():
     # Set up solver, for now parameters are hardcoded here
     num_pml_cells = np.array([12, 12, 4])
-    return solver.cpml.CPML(num_pml_cells, 4)
+    #return solver.cpml.CPML(num_pml_cells, 4)
     #return solver.pml_sf.PML_SF(num_pml_cells, 4)
-    #return solver.fdtd.Fdtd()
+    return solver.fdtd.Fdtd()
 
 def init_grid(solver):
     # Set up grid, for now parameters are hardcoded here
@@ -93,18 +94,18 @@ def add_hard_source(grid, iteration):
     value = (10.0 - 15 * math.cos(math.pi * iteration / duration_center) + 6 * math.cos(2.0 * math.pi * iteration / duration_center) - math.cos(3.0 * math.pi * iteration / duration_center)) / 32.0
     if iteration > duration_iterations:
         value = 0.0
-    #grid.ez[i_center, j_center, k_center] = value
-    for j in range(grid.num_cells[1]):
-        grid.ez[i_center, j, k_center] = value
+    grid.ez[i_center, j_center, k_center] = value
+    #for j in range(grid.num_cells[1]):
+    #    grid.ez[i_center, j, k_center] = value
 
 def print_energy(grid, iteration):
     period = 20
     if iteration % period != 0:
         return
-    energy = 0.0
-    energy_internal = 0.0
-    energy_ez = 0.0
-    energy_ez_internal = 0.0
+    e_energy = 0.0
+    b_energy = 0.0
+    e_energy_internal = 0.0
+    b_energy_internal = 0.0
     for i in range(grid.num_cells[0]):
         for j in range(grid.num_cells[1]):
             # for k in range(grid.num_cells[2]):
@@ -112,27 +113,27 @@ def print_energy(grid, iteration):
             #     node_value += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
             #     energy += node_value * grid.steps[0] * grid.steps[1] * grid.steps[2]
             k = grid.num_cells[2] // 2
-            energy += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
-            energy += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
-            energy_ez += grid.ez[i, j, k] * grid.ez[i, j, k]
+            e_energy += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
+            b_energy += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
             if (i >= grid.num_guard_cells[0]) and (i < grid.num_cells[0] - grid.num_guard_cells[0]) and (j >= grid.num_guard_cells[1]) and (j < grid.num_cells[1] - grid.num_guard_cells[1]):
-                energy_internal += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
-                energy_internal += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
-                energy_ez_internal += grid.ez[i, j, k] * grid.ez[i, j, k]
-    energy *= grid.steps[0] * grid.steps[1] * grid.steps[2] * 1e-7 / (8.0 * math.pi)
-    energy_internal *= grid.steps[0] * grid.steps[1] * grid.steps[2] * 1e-7 / (8.0 * math.pi)
-    energy_ez *= grid.steps[0] * grid.steps[1] * grid.steps[2] * 1e-7 / (8.0 * math.pi)
-    energy_ez_internal *= grid.steps[0] * grid.steps[1] * grid.steps[2] * 1e-7 / (8.0 * math.pi)
-    print(str(iteration) + " " + str(energy) + " " + str(energy_internal) + " " + str(energy_ez) + " " + str(energy_ez_internal))
+                e_energy_internal += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
+                b_energy_internal += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
+    e_factor = 0.5 * scipy.constants.epsilon_0 * grid.steps[0] * grid.steps[1] * grid.steps[2]
+    e_energy *= e_factor
+    e_energy_internal *= e_factor
+    b_factor = 0.5 / scipy.constants.mu_0 * grid.steps[0] * grid.steps[1] * grid.steps[2]
+    b_energy *= b_factor
+    b_energy_internal *= b_factor
+    energy = e_energy + b_energy
+    energy_internal = e_energy_internal + b_energy_internal
+    print(str(iteration) + " " + str(e_energy) + " " + str(b_energy) + " " + str(e_energy_internal) + " " + str(b_energy_internal))
 
 def main():
     solver = init_solver()
     grid = init_grid(solver)
 
-    c = 29979245800.0 # cm / s
-
     # set time step to be 1% below CFL for Yee solver
-    dt_cfl_limit = 1.0 / (c * math.sqrt(1.0 / grid.steps[0]**2 + 1.0 / grid.steps[1]**2 + 1.0 / grid.steps[2]**2) )
+    dt_cfl_limit = 1.0 / (scipy.constants.c * math.sqrt(1.0 / grid.steps[0]**2 + 1.0 / grid.steps[1]**2 + 1.0 / grid.steps[2]**2) )
     ratio_of_cfl_limit = 0.99
     dt = ratio_of_cfl_limit * dt_cfl_limit
 
