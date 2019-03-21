@@ -1,5 +1,6 @@
 import grid.yee
 import solver.fdtd
+import solver.cpml
 import solver.pml_sf
 import initialconditions
 
@@ -10,15 +11,16 @@ import numpy as np
 
 def init_solver():
     # Set up solver, for now parameters are hardcoded here
-    num_pml_cells = np.array([12, 12, 12])
-    return solver.pml_sf.PML_SF(num_pml_cells, 4)
+    num_pml_cells = np.array([12, 12, 4])
+    return solver.cpml.CPML(num_pml_cells, 4)
+    #return solver.pml_sf.PML_SF(num_pml_cells, 4)
     #return solver.fdtd.Fdtd()
 
 def init_grid(solver):
     # Set up grid, for now parameters are hardcoded here
     min_position = np.array([0.0, 0.0, 0.0])
     max_position = np.array([1.0, 1.0, 1.0])
-    num_internal_cells = np.array([128, 128, 1]) # modify this
+    num_internal_cells = np.array([64, 64, 1]) # modify this
     num_guard_cells = np.array(solver.get_guard_size(num_internal_cells)) # do not modify this
     gr = grid.yee.Yee_grid(min_position, max_position, num_internal_cells, num_guard_cells)
     # Set up initial conditions as a plane wave in Ey, Bz, runs along x in positive direction
@@ -84,16 +86,16 @@ def add_soft_source(grid, iteration):
 def add_hard_source(grid, iteration):
     """(6.46) from Taflove 2nd ed."""
     duration_iterations = 40
-    diration_center = duration_iterations / 2
+    duration_center = duration_iterations / 2
     i_center = grid.num_cells[0] // 2
     j_center = grid.num_cells[1] // 2
     k_center = grid.num_cells[2] // 2
-    value = (10.0 - 15 * math.cos(math.pi * iteration / diration_center) + 6 * math.cos(2.0 * math.pi * iteration / diration_center) - math.cos(3.0 * math.pi * iteration / diration_center)) / 32.0
+    value = (10.0 - 15 * math.cos(math.pi * iteration / duration_center) + 6 * math.cos(2.0 * math.pi * iteration / duration_center) - math.cos(3.0 * math.pi * iteration / duration_center)) / 32.0
     if iteration > duration_iterations:
         value = 0.0
-    grid.ez[i_center, j_center, k_center] = value
-    #for j in range(grid.num_cells[1]):
-    #    grid.ez[i_center, j, k_center] = 0.0
+    #grid.ez[i_center, j_center, k_center] = value
+    for j in range(grid.num_cells[1]):
+        grid.ez[i_center, j, k_center] = value
 
 def print_energy(grid, iteration):
     period = 20
@@ -134,8 +136,8 @@ def main():
     ratio_of_cfl_limit = 0.99
     dt = ratio_of_cfl_limit * dt_cfl_limit
 
-    num_iterations = 300
-    plotting_period = 10 # period to make plots, set to 0 to disable plotting
+    num_iterations = 200
+    plotting_period = 20 # period to make plots, set to 0 to disable plotting
 
     plot = Plot(plotting_period)
     for iteration in range(num_iterations):
