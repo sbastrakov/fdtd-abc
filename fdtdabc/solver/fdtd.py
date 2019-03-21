@@ -1,8 +1,9 @@
 import numpy as np
+import scipy.constants
 
 
 class Fdtd:
-    """Yee FDTD solver, operates on Yee grid, uses CGS units"""
+    """Yee FDTD solver, operates on Yee grid, uses SI units"""
 
     def get_guard_size(self, num_internal_cells):
         guard_size = np.array([1, 1, 1])
@@ -27,13 +28,10 @@ class Fdtd:
         self.apply_e_bc(grid)
 
     def update_e_element(self, grid, dt, i, j, k):
-        c = 29979245800.0 # cm / s
-        cdt = c * dt
+        # Discretized partial derivatives of magnetic field (indexing is done to match grid.Yee_grid)
         dx = grid.steps[0]
         dy = grid.steps[1]
         dz = grid.steps[2]
-
-        # Discretized partial derivatives of magnetic field (indexing is done to match grid.Yee_grid)
         i_prev = (i - 1 + grid.num_cells[0]) % grid.num_cells[0]
         j_prev = (j - 1 + grid.num_cells[1]) % grid.num_cells[1]
         k_prev = (k - 1 + grid.num_cells[2]) % grid.num_cells[2]
@@ -44,10 +42,11 @@ class Fdtd:
         dbz_dx = (grid.bz[i, j, k] - grid.bz[i_prev, j, k]) / dx
         dbz_dy = (grid.bz[i, j, k] - grid.bz[i, j_prev, k]) / dy
 
-        # Yee's scheme
-        grid.ex[i, j, k] += cdt * (dbz_dy - dby_dz)
-        grid.ey[i, j, k] += cdt * (dbx_dz - dbz_dx)
-        grid.ez[i, j, k] += cdt * (dby_dx - dbx_dy)
+        # Yee's scheme: E_new = E_old + dt/(eps0 * mu0) * rot(B)
+        scaled_dt = dt / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
+        grid.ex[i, j, k] += scaled_dt * (dbz_dy - dby_dz)
+        grid.ey[i, j, k] += scaled_dt * (dbx_dz - dbz_dx)
+        grid.ez[i, j, k] += scaled_dt * (dby_dx - dbx_dy)
 
     def apply_e_bc(self, grid):
         """Apply periodic boundary conditions for the electric field"""
@@ -66,13 +65,10 @@ class Fdtd:
         self.apply_b_bc(grid)
 
     def update_b_element(self, grid, dt, i, j, k):
-        c = 29979245800.0 # cm / s
-        cdt = c * dt
+        # Discretized partial derivatives of electric field (indexing is done to match grid.Yee_grid)
         dx = grid.steps[0]
         dy = grid.steps[1]
         dz = grid.steps[2]
-
-        # Discretized partial derivatives of electric field (indexing is done to match grid.Yee_grid)
         i_next = (i + 1) % grid.num_cells[0]
         j_next = (j + 1) % grid.num_cells[1]
         k_next = (k + 1) % grid.num_cells[2]
@@ -83,10 +79,10 @@ class Fdtd:
         dez_dx = (grid.ez[i + 1, j, k] - grid.ez[i, j, k]) / dx
         dez_dy = (grid.ez[i, j_next, k] - grid.ez[i, j, k]) / dy
 
-        # Yee's scheme
-        grid.bx[i, j, k] += cdt * (dey_dz - dez_dy)
-        grid.by[i, j, k] += cdt * (dez_dx - dex_dz)
-        grid.bz[i, j, k] += cdt * (dex_dy - dey_dx)
+        # Yee's scheme: B_new = B_old - dt * rot(E)
+        grid.bx[i, j, k] += dt * (dey_dz - dez_dy)
+        grid.by[i, j, k] += dt * (dez_dx - dex_dz)
+        grid.bz[i, j, k] += dt * (dex_dy - dey_dx)
 
     def apply_b_bc(self, grid):
         """Apply periodic boundary conditions for the magnetic field"""
