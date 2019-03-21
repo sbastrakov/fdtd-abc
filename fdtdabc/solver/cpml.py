@@ -88,7 +88,7 @@ class CPML:
         self._b_diff_coeff_z = np.zeros(grid.num_cells)
         self._b_is_internal = np.zeros(grid.num_cells)
         self._init_coeffs_field(grid, np.array([0.0, 0.0, 0.0]), self._e_decay_coeff_x, self._e_decay_coeff_y, self._e_decay_coeff_z, self._e_diff_coeff_x, self._e_diff_coeff_y, self._e_diff_coeff_z, self._e_is_internal, dt)
-        self._init_coeffs_field(grid, np.array([0.5, 0.5, 0.5]), self._b_decay_coeff_x, self._b_decay_coeff_y, self._b_decay_coeff_z, self._b_diff_coeff_x, self._b_diff_coeff_y, self._b_diff_coeff_z, self._b_is_internal, 0.5 * dt)
+        #self._init_coeffs_field(grid, np.array([0.5, 0.5, 0.5]), self._b_decay_coeff_x, self._b_decay_coeff_y, self._b_decay_coeff_z, self._b_diff_coeff_x, self._b_diff_coeff_y, self._b_diff_coeff_z, self._b_is_internal, 0.5 * dt)
 
     def _init_coeffs_field(self, grid, shift, decay_coeff_x, decay_coeff_y, decay_coeff_z, diff_coeff_x, diff_coeff_y, diff_coeff_z, is_internal, dt):
         c = 29979245800.0 # cm / s
@@ -96,20 +96,29 @@ class CPML:
         for i in range(grid.num_cells[0]):
             for j in range(grid.num_cells[1]):
                 for k in range(grid.num_cells[2]):
-                    sigma_index = np.array([i, j, k]) + shift
-                    sigma = self._get_sigma(grid, sigma_index)
-                    decay_coeff = (1.0 - 0.5 * sigma * cdt) / (1.0 + 0.5 * sigma * cdt)
-                    diff_coeff = np.array([cdt, cdt, cdt]) / (1.0 + 0.5 * sigma * cdt)
+                    index = np.array([i, j, k]) + shift
+                    sigma = self._get_sigma(grid, index)
+                    coeff_k = self._get_k(grid, index)
+                    a = self._get_a(grid, index)
+                    psi_b = [1.0, 1.0, 1.0]
+                    psi_b_another = [1.0, 1.0, 1.0]
+                    psi_c = [0.0, 0.0, 0.0]
                     is_internal[i, j, k] = 1.0
                     for d in range(3):
-                        if sigma[d]:
+                        psi_b[d] = math.exp(-(sigma[d] / coeff_k[d] + a[d]) * cdt)
+                        psi_b_another[d] = math.exp(-(sigma[d] / coeff_k[d] + a[d]) * dt)
+                        if sigma[d] + a[d] * coeff_k[d] != 0.0:
+                            psi_c[d] = sigma[d] * (psi_b[d] - 1.0) / (coeff_k[d] * (sigma[d] + a[d] * coeff_k[d]))
                             is_internal[i, j, k] = 0.0
-                    decay_coeff_x[i, j, k] = decay_coeff[0]
-                    decay_coeff_y[i, j, k] = decay_coeff[1]
-                    decay_coeff_z[i, j, k] = decay_coeff[2]
-                    diff_coeff_x[i, j, k] = diff_coeff[0]
-                    diff_coeff_y[i, j, k] = diff_coeff[1]
-                    diff_coeff_z[i, j, k] = diff_coeff[2]
+                    decay_coeff = (1.0 - 0.5 * sigma * cdt) / (1.0 + 0.5 * sigma * cdt)
+                    if i == 0:
+                        print(str([i, j, k]) + ": sigma = " + str(sigma) + ", coeff_k = " + str(coeff_k) + ", a = " + str(a) + ", psi_b = " + str(psi_b) + ", psi_b_another = " + str(psi_b_another) + ", decay_coeff = " + str(decay_coeff) + ", psi_c = "  + str(psi_c))
+                    decay_coeff_x[i, j, k] = psi_b[0]
+                    decay_coeff_y[i, j, k] = psi_b[1]
+                    decay_coeff_z[i, j, k] = psi_b[2]
+                    diff_coeff_x[i, j, k] = psi_c[0]
+                    diff_coeff_y[i, j, k] = psi_c[1]
+                    diff_coeff_z[i, j, k] = psi_c[2]
 
     def _get_sigma(self, grid, index):
         """Index is float 3d array, values normalized to cell size"""
@@ -200,27 +209,18 @@ class CPML:
         else:
             # Update psi components
             index = np.array([i, j, k])
-            sigma = self._get_sigma(grid, index)
-            coeff_k = self._get_k(grid, index)
-            a = [0.0, 0.0, 0.0] #self._get_a(grid, index)
-            psi_b = [1.0, 1.0, 1.0]
-            psi_c = [0.0, 0.0, 0.0]
-            for d in range(3):
-                psi_b[d] = math.exp((-sigma[d] / coeff_k[d] + a[d]) * cdt)
-                if sigma[d] + a[d] * coeff_k[d] != 0.0:
-                    psi_c[d] = sigma[d] * (psi_b[d] - 1.0) / (coeff_k[d] * (sigma[d] + a[d] * coeff_k[d]))
-            self.psi_eyx[i, j, k] = psi_b[0] * self.psi_eyx[i, j, k] + psi_c[0] * dbz_dx
-            self.psi_ezx[i, j, k] = psi_b[0] * self.psi_ezx[i, j, k] + psi_c[0] * dby_dx
-            self.psi_exy[i, j, k] = psi_b[1] * self.psi_exy[i, j, k] + psi_c[1] * dbz_dy
-            self.psi_ezy[i, j, k] = psi_b[1] * self.psi_ezy[i, j, k] + psi_c[1] * dbx_dy
-            self.psi_exz[i, j, k] = psi_b[2] * self.psi_exz[i, j, k] + psi_c[2] * dby_dz
-            self.psi_eyz[i, j, k] = psi_b[2] * self.psi_eyz[i, j, k] + psi_c[2] * dbx_dz
+            coeff_k = self._get_k(grid, index) # called k in the paper, renamed to not confuse with index
+            self.psi_eyx[i, j, k] = self._e_decay_coeff_x[i, j, k] * self.psi_eyx[i, j, k] + self._e_diff_coeff_x[i, j, k] * dbz_dx
+            self.psi_ezx[i, j, k] = self._e_decay_coeff_x[i, j, k] * self.psi_ezx[i, j, k] + self._e_diff_coeff_x[i, j, k] * dby_dx
+            self.psi_exy[i, j, k] = self._e_decay_coeff_y[i, j, k] * self.psi_exy[i, j, k] + self._e_diff_coeff_y[i, j, k] * dbz_dy
+            self.psi_ezy[i, j, k] = self._e_decay_coeff_y[i, j, k] * self.psi_ezy[i, j, k] + self._e_diff_coeff_y[i, j, k] * dbx_dy
+            self.psi_exz[i, j, k] = self._e_decay_coeff_z[i, j, k] * self.psi_exz[i, j, k] + self._e_diff_coeff_z[i, j, k] * dby_dz
+            self.psi_eyz[i, j, k] = self._e_decay_coeff_z[i, j, k] * self.psi_eyz[i, j, k] + self._e_diff_coeff_z[i, j, k] * dbx_dz
             # Update fields
-            ca = 0.0 # introduced just to match the paper, for not lossy medium is always 0
-            cb = cdt # for not lossy medium is always cdt
-            grid.ex[i, j, k] += cb * (dbz_dy / coeff_k[1] - dby_dz / coeff_k[2] + self.psi_exy[i, j, k] - self.psi_exz[i, j, k])
-            grid.ey[i, j, k] += cb * (dbx_dz / coeff_k[2] - dbz_dx / coeff_k[0] + self.psi_eyz[i, j, k] - self.psi_eyx[i, j, k])
-            grid.ez[i, j, k] += cb * (dby_dx / coeff_k[0] - dbx_dy / coeff_k[1] + self.psi_ezx[i, j, k] - self.psi_ezy[i, j, k])
+            # As we do not have a naturally lossy medium, coefficients from the paper ca = 0.0 and cb = cdt
+            grid.ex[i, j, k] += cdt * (dbz_dy / coeff_k[1] - dby_dz / coeff_k[2] + self.psi_exy[i, j, k] - self.psi_exz[i, j, k])
+            grid.ey[i, j, k] += cdt * (dbx_dz / coeff_k[2] - dbz_dx / coeff_k[0] + self.psi_eyz[i, j, k] - self.psi_eyx[i, j, k])
+            grid.ez[i, j, k] += cdt * (dby_dx / coeff_k[0] - dbx_dy / coeff_k[1] + self.psi_ezx[i, j, k] - self.psi_ezy[i, j, k])
 
     def update_b(self, grid, dt):
         for i in range(0, grid.num_cells[0]):
@@ -266,27 +266,16 @@ class CPML:
         else:
             # Update psi components
             index = np.array([i + 0.5, j + 0.5, k + 0.5])
-            sigma = self._get_sigma(grid, index)
-            coeff_k = self._get_k(grid, index)
-            a = self._get_a(grid, index)
-            psi_b = np.array([1.0, 1.0, 1.0])
-            psi_c = np.array([0.0, 0.0, 0.0])
-            for d in range(3):
-                psi_b[d] = math.exp((-sigma[d] / coeff_k[d] + a[d]) * cdt)
-                if sigma[d] + a[d] * coeff_k[d] != 0.0:
-                    psi_c[d] = sigma[d] * (psi_b[d] - 1.0) / (coeff_k[d] * (sigma[d] + a[d] * coeff_k[d]))
-            #print(str(i) + " " + str(j) + " " + str(k) + ": sigma = " + str(sigma) + ", k = " + str(coeff_k) + ", a = " + str(a) + ", b = " + str(psi_b) + ", c = " + str(psi_c))
-
-            self.psi_byx[i, j, k] = psi_b[0] * self.psi_byx[i, j, k] + psi_c[0] * dez_dx
-            self.psi_bzx[i, j, k] = psi_b[0] * self.psi_bzx[i, j, k] + psi_c[0] * dey_dx
-            self.psi_bxy[i, j, k] = psi_b[1] * self.psi_bxy[i, j, k] + psi_c[1] * dez_dy
-            self.psi_bzy[i, j, k] = psi_b[1] * self.psi_bzy[i, j, k] + psi_c[1] * dex_dy
-            self.psi_bxz[i, j, k] = psi_b[2] * self.psi_bxz[i, j, k] + psi_c[2] * dey_dz
-            self.psi_byz[i, j, k] = psi_b[2] * self.psi_byz[i, j, k] + psi_c[2] * dex_dz
+            coeff_k = self._get_k(grid, index) # called k in the paper, renamed to not confuse with index
+            self.psi_byx[i, j, k] = self._b_decay_coeff_x[i, j, k] * self.psi_byx[i, j, k] + self._b_diff_coeff_x[i, j, k] * dez_dx
+            self.psi_bzx[i, j, k] = self._b_decay_coeff_x[i, j, k] * self.psi_bzx[i, j, k] + self._b_diff_coeff_x[i, j, k] * dey_dx
+            self.psi_bxy[i, j, k] = self._b_decay_coeff_y[i, j, k] * self.psi_bxy[i, j, k] + self._b_diff_coeff_y[i, j, k] * dez_dy
+            self.psi_bzy[i, j, k] = self._b_decay_coeff_y[i, j, k] * self.psi_bzy[i, j, k] + self._b_diff_coeff_y[i, j, k] * dex_dy
+            self.psi_bxz[i, j, k] = self._b_decay_coeff_z[i, j, k] * self.psi_bxz[i, j, k] + self._b_diff_coeff_z[i, j, k] * dey_dz
+            self.psi_byz[i, j, k] = self._b_decay_coeff_z[i, j, k] * self.psi_byz[i, j, k] + self._b_diff_coeff_z[i, j, k] * dex_dz
             # Update fields
-            ca = 0.0 # introduced just to match the paper, for not lossy medium is always 0
-            cb = cdt # for not lossy medium is always cdt
-            grid.bx[i, j, k] += cb * (dey_dz / coeff_k[2] - dez_dy / coeff_k[1] + self.psi_bxy[i, j, k] - self.psi_bxz[i, j, k])
-            grid.by[i, j, k] += cb * (dez_dx / coeff_k[0] - dex_dz / coeff_k[2] + self.psi_byx[i, j, k] - self.psi_byz[i, j, k])
-            grid.bz[i, j, k] += cb * (dex_dy / coeff_k[1] - dey_dx / coeff_k[0] + self.psi_bzx[i, j, k] - self.psi_bzy[i, j, k])
+            # As we do not have a naturally lossy medium, coefficients from the paper ca = 0.0 and cb = cdt
+            grid.bx[i, j, k] += cdt * (dey_dz / coeff_k[2] - dez_dy / coeff_k[1] + self.psi_bxy[i, j, k] - self.psi_bxz[i, j, k])
+            grid.by[i, j, k] += cdt * (dez_dx / coeff_k[0] - dex_dz / coeff_k[2] + self.psi_byx[i, j, k] - self.psi_byz[i, j, k])
+            grid.bz[i, j, k] += cdt * (dex_dy / coeff_k[1] - dey_dx / coeff_k[0] + self.psi_bzx[i, j, k] - self.psi_bzy[i, j, k])
 
