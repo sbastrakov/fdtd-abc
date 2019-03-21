@@ -1,10 +1,12 @@
+import numpy as np
+
 
 class Fdtd:
     """Yee FDTD solver, operates on Yee grid, uses CGS units"""
 
     def get_guard_size(self, num_internal_cells):
-        guard_size = [1, 1, 1]
-        guard_size[num_internal_cells == 1] = 0
+        guard_size = np.array([1, 1, 1])
+        guard_size[np.where(num_internal_cells == 1)] = 0
         return guard_size
 
     def run_iteration(self, grid, dt):
