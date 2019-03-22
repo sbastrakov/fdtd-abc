@@ -1,6 +1,7 @@
 import grid.yee
 import solver.fdtd
 import solver.cpml
+import solver.cpml_fdtdxx
 import solver.pml_sf
 import initialconditions
 
@@ -12,18 +13,22 @@ import scipy.constants
 
 def init_solver():
     # Set up solver, for now parameters are hardcoded here
-    num_pml_cells = np.array([12, 12, 4])
-    #return solver.cpml.CPML(num_pml_cells, 4)
-    #return solver.pml_sf.PML_SF(num_pml_cells, 4)
-    return solver.fdtd.Fdtd()
+    pml_left_width_cells = 8
+    pml_right_width_cells = 0
+    num_pml_cells_left = np.array([pml_left_width_cells, pml_left_width_cells, pml_left_width_cells])
+    num_pml_cells_right = np.array([pml_right_width_cells, pml_right_width_cells, pml_right_width_cells])
+    #return solver.cpml_fdtdxx.CPML(num_pml_cells)
+    return solver.cpml.CPML(num_pml_cells_left, num_pml_cells_right)
+    #return solver.pml_sf.PML_SF(num_pml_cells)
+    #return solver.fdtd.Fdtd()
 
 def init_grid(solver):
     # Set up grid, for now parameters are hardcoded here
     min_position = np.array([0.0, 0.0, 0.0])
-    max_position = np.array([1.0, 1.0, 1.0])
-    num_internal_cells = np.array([64, 64, 1]) # modify this
-    num_guard_cells = np.array(solver.get_guard_size(num_internal_cells)) # do not modify this
-    gr = grid.yee.Yee_grid(min_position, max_position, num_internal_cells, num_guard_cells)
+    max_position = np.array([1e-3, 1e-3, 1e-3])
+    num_internal_cells = np.array([4, 1, 1]) # modify this
+    num_guard_cells_left, num_guard_cells_right = np.array(solver.get_guard_size(num_internal_cells)) # do not modify this
+    gr = grid.yee.Yee_grid(min_position, max_position, num_internal_cells, num_guard_cells_left, num_guard_cells_right)
     # Set up initial conditions as a plane wave in Ey, Bz, runs along x in positive direction
     #num_periods = 4
     #initialconditions.planewave(gr, num_periods)
@@ -94,9 +99,9 @@ def add_hard_source(grid, iteration):
     value = (10.0 - 15 * math.cos(math.pi * iteration / duration_center) + 6 * math.cos(2.0 * math.pi * iteration / duration_center) - math.cos(3.0 * math.pi * iteration / duration_center)) / 32.0
     if iteration > duration_iterations:
         value = 0.0
-    grid.ez[i_center, j_center, k_center] = value
-    #for j in range(grid.num_cells[1]):
-    #    grid.ez[i_center, j, k_center] = value
+    #grid.ez[i_center, j_center, k_center] = value
+    for j in range(grid.num_cells[1]):
+        grid.ez[i_center, j, k_center] = value
 
 def print_energy(grid, iteration):
     period = 20
@@ -115,7 +120,7 @@ def print_energy(grid, iteration):
             k = grid.num_cells[2] // 2
             e_energy += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
             b_energy += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
-            if (i >= grid.num_guard_cells[0]) and (i < grid.num_cells[0] - grid.num_guard_cells[0]) and (j >= grid.num_guard_cells[1]) and (j < grid.num_cells[1] - grid.num_guard_cells[1]):
+            if (i >= grid.num_guard_cells_left[0]) and (i < grid.num_cells[0] - grid.num_guard_cells_right[0]) and (j >= grid.num_guard_cells_left[1]) and (j < grid.num_cells[1] - grid.num_guard_cells_right[1]):
                 e_energy_internal += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
                 b_energy_internal += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
     e_factor = 0.5 * scipy.constants.epsilon_0 * grid.steps[0] * grid.steps[1] * grid.steps[2]
@@ -137,8 +142,8 @@ def main():
     ratio_of_cfl_limit = 0.99
     dt = ratio_of_cfl_limit * dt_cfl_limit
 
-    num_iterations = 200
-    plotting_period = 20 # period to make plots, set to 0 to disable plotting
+    num_iterations = 1
+    plotting_period = 10 # period to make plots, set to 0 to disable plotting
 
     plot = Plot(plotting_period)
     for iteration in range(num_iterations):

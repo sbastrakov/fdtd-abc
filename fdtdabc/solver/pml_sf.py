@@ -1,11 +1,17 @@
 import numpy as np
+import scipy.constants
+from scipy.constants import codata
 
 import copy
 import math
 
 
 class PML_SF:
-    """Yee FDTD solver with split-field PML, operates on Yee grid with split fields stored, uses CGS units"""
+    """
+    Yee's FDTD solver with split-field PML
+    Operates on Yee grid
+    All units in SI
+    """
 
     def __init__(self, num_pml_cells, order = 4):
         self.num_pml_cells = num_pml_cells
@@ -50,13 +56,16 @@ class PML_SF:
         sigma_opt_ratio = 1.0
         self.max_sigma = sigma_opt_ratio * opt_sigma
 
+    # this value is for sigma/eps0 = sigma*/mu0
     def _get_opt_sigma(self, grid):
         opt_sigma = np.array([0.0, 0.0, 0.0])
         for d in range(3):
             if self.num_pml_cells[d]:
-                opt_sigma[d] = 0.8 * (self.order + 1) / grid.steps[d]
-                # equation (15) in CONVOLUTION PML (CPML): AN EFFICIENT FDTD IMPLEMENTATION OF THE CFS – PML FOR ARBITRARY MEDIA
-                # basically the same is (17) in  Performance advantages of CPML over UPML absorbing boundary conditions in FDTD algorithm
+                # Taflove 1st ed., from eq. (7.90)
+                #opt_sigma[d] = -math.log(1e-7) * (self.order + 1) * scipy.constants.c / (2.0 * self.num_pml_cells[d] * grid.steps[d])
+                opt_sigma[d] = 0.8 * (self.order + 1) * scipy.constants.c / grid.steps[d]
+                ## equation (15) divided by eps0 in CONVOLUTION PML (CPML): AN EFFICIENT FDTD IMPLEMENTATION OF THE CFS – PML FOR ARBITRARY MEDIA
+                ## basically the same is (17) in  Performance advantages of CPML over UPML absorbing boundary conditions in FDTD algorithm
         return opt_sigma
 
     def _create_split_field(self, full_field):
@@ -83,16 +92,13 @@ class PML_SF:
         self._init_coeffs_field(grid, np.array([0.5, 0.5, 0.5]), self._b_decay_coeff_x, self._b_decay_coeff_y, self._b_decay_coeff_z, self._b_diff_coeff_x, self._b_diff_coeff_y, self._b_diff_coeff_z, self._b_is_internal, 0.5 * dt)
 
     def _init_coeffs_field(self, grid, shift, decay_coeff_x, decay_coeff_y, decay_coeff_z, diff_coeff_x, diff_coeff_y, diff_coeff_z, is_internal, dt):
-        c = 29979245800.0 # cm / s
-        cdt = c * dt
         for i in range(grid.num_cells[0]):
             for j in range(grid.num_cells[1]):
                 for k in range(grid.num_cells[2]):
                     sigma_index = np.array([i, j, k]) + shift
                     sigma = self._get_sigma(grid, sigma_index)
-                    #decay_coeff = (1.0 - 0.5 * sigma * cdt) / (1.0 + 0.5 * sigma * cdt)
-                    decay_coeff = (1.0 - 2.0 * math.pi * sigma * cdt) / (1.0 + 2.0 * math.pi * sigma * cdt)
-                    diff_coeff = np.array([cdt, cdt, cdt]) / (1.0 + 2.0 * math.pi * sigma * cdt)
+                    decay_coeff = (1.0 - 0.5 * sigma * dt) / (1.0 + 0.5 * sigma * dt)
+                    diff_coeff = np.array([dt, dt, dt]) / (1.0 + 0.5 * sigma * dt)
                     is_internal[i, j, k] = 1.0
                     for d in range(3):
                         if sigma[d]:
@@ -104,6 +110,7 @@ class PML_SF:
                     diff_coeff_y[i, j, k] = diff_coeff[1]
                     diff_coeff_z[i, j, k] = diff_coeff[2]
 
+    # returns sigma/eps0 = sigma*/mu0
     def _get_sigma(self, grid, index):
         """Index is float 3d array, values normalized to cell size"""
         # This needs to be a polynomial growth from 0 at border with internal area to max_sigma at outer border
@@ -126,13 +133,10 @@ class PML_SF:
                     self.update_e_element(grid, dt, i, j, k)
 
     def update_e_element(self, grid, dt, i, j, k):
-        c = 29979245800.0 # cm / s
-        cdt = c * dt
+        # Discretized partial derivatives of magnetic field (same as in standard FDTD)
         dx = grid.steps[0]
         dy = grid.steps[1]
         dz = grid.steps[2]
-
-        # Discretized partial derivatives of magnetic field (same as in standard FDTD)
         i_prev = (i - 1 + grid.num_cells[0]) % grid.num_cells[0]
         j_prev = (j - 1 + grid.num_cells[1]) % grid.num_cells[1]
         k_prev = (k - 1 + grid.num_cells[2]) % grid.num_cells[2]
@@ -156,17 +160,18 @@ class PML_SF:
 
         if self._e_is_internal[i, j, k]:
             # Standard Yee's scheme
-            grid.ex[i, j, k] += cdt * (dbz_dy - dby_dz)
-            grid.ey[i, j, k] += cdt * (dbx_dz - dbz_dx)
-            grid.ez[i, j, k] += cdt * (dby_dx - dbx_dy)
+            coeff = dt / (scipy.constants.epsilon_0 * scipy.constants.mu_0) # also, coeff = dt * c^2, as c^2 = 1/(eps0 * mu0)
+            grid.ex[i, j, k] += coeff * (dbz_dy - dby_dz)
+            grid.ey[i, j, k] += coeff * (dbx_dz - dbz_dx)
+            grid.ez[i, j, k] += coeff * (dby_dx - dbx_dy)
         else:
             # Update split fields
-            self.eyx[i, j, k] = self._e_decay_coeff_x[i, j, k] * self.eyx[i, j, k] - self._e_diff_coeff_x[i, j, k] * dbz_dx
-            self.ezx[i, j, k] = self._e_decay_coeff_x[i, j, k] * self.ezx[i, j, k] + self._e_diff_coeff_x[i, j, k] * dby_dx
-            self.exy[i, j, k] = self._e_decay_coeff_y[i, j, k] * self.exy[i, j, k] + self._e_diff_coeff_y[i, j, k] * dbz_dy
-            self.ezy[i, j, k] = self._e_decay_coeff_y[i, j, k] * self.ezy[i, j, k] - self._e_diff_coeff_y[i, j, k] * dbx_dy
-            self.exz[i, j, k] = self._e_decay_coeff_z[i, j, k] * self.exz[i, j, k] - self._e_diff_coeff_z[i, j, k] * dby_dz
-            self.eyz[i, j, k] = self._e_decay_coeff_z[i, j, k] * self.eyz[i, j, k] + self._e_diff_coeff_z[i, j, k] * dbx_dz
+            self.eyx[i, j, k] = self._e_decay_coeff_x[i, j, k] * self.eyx[i, j, k] - self._e_diff_coeff_x[i, j, k] * dbz_dx / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
+            self.ezx[i, j, k] = self._e_decay_coeff_x[i, j, k] * self.ezx[i, j, k] + self._e_diff_coeff_x[i, j, k] * dby_dx / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
+            self.exy[i, j, k] = self._e_decay_coeff_y[i, j, k] * self.exy[i, j, k] + self._e_diff_coeff_y[i, j, k] * dbz_dy / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
+            self.ezy[i, j, k] = self._e_decay_coeff_y[i, j, k] * self.ezy[i, j, k] - self._e_diff_coeff_y[i, j, k] * dbx_dy / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
+            self.exz[i, j, k] = self._e_decay_coeff_z[i, j, k] * self.exz[i, j, k] - self._e_diff_coeff_z[i, j, k] * dby_dz / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
+            self.eyz[i, j, k] = self._e_decay_coeff_z[i, j, k] * self.eyz[i, j, k] + self._e_diff_coeff_z[i, j, k] * dbx_dz / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
             # Sum up split fields to get full fields
             grid.ex[i, j, k] = self.exy[i, j, k] + self.exz[i, j, k]
             grid.ey[i, j, k] = self.eyx[i, j, k] + self.eyz[i, j, k]
@@ -179,14 +184,11 @@ class PML_SF:
                     self.update_b_element(grid, dt, i, j, k)
 
     def update_b_element(self, grid, dt, i, j, k):
-        c = 29979245800.0 # cm / s
-        cdt = c * dt
+        # Discretized partial derivatives of electric field (same as in standard FDTD)
+        # with periodic boundaries
         dx = grid.steps[0]
         dy = grid.steps[1]
         dz = grid.steps[2]
-
-        # Discretized partial derivatives of electric field (same as in standard FDTD)
-        # with periodic boundaries
         i_next = (i + 1) % grid.num_cells[0]
         j_next = (j + 1) % grid.num_cells[1]
         k_next = (k + 1) % grid.num_cells[2]
@@ -210,9 +212,10 @@ class PML_SF:
 
         if self._b_is_internal[i, j, k]:
             # Standard Yee's scheme
-            grid.bx[i, j, k] += cdt * (dey_dz - dez_dy)
-            grid.by[i, j, k] += cdt * (dez_dx - dex_dz)
-            grid.bz[i, j, k] += cdt * (dex_dy - dey_dx)
+            coeff = -dt
+            grid.bx[i, j, k] += coeff * (dez_dy - dey_dz)
+            grid.by[i, j, k] += coeff * (dex_dz - dez_dx)
+            grid.bz[i, j, k] += coeff * (dey_dx - dex_dy)
         else:
             # Update split fields
             self.byx[i, j, k] = self._b_decay_coeff_x[i, j, k] * self.byx[i, j, k] + self._b_diff_coeff_x[i, j, k] * dez_dx

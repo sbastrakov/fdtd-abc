@@ -5,17 +5,18 @@ import numpy as np
 class Yee_grid:
     """Values of field components on a Yee grid. E values on midedges, B values on midfaces"""
 
-    def __init__(self, min_position, max_position, num_internal_cells, num_guard_cells):
+    def __init__(self, min_position, max_position, num_internal_cells, num_guard_cells_left, num_guard_cells_right):
         """Takes the box min and max position (internal area, without guard), size of internal area,
-        size of guard on each side. Total number of cells is num_internal_cells + num_guard_cells * 2
+        size of guard on each side. Total number of cells is num_internal_cells + num_guard_cells_left + num_guard_cells_right
         """
         self.steps = (max_position - min_position) / num_internal_cells
         self.num_internal_cells = num_internal_cells
-        self.num_guard_cells = num_guard_cells
-        self.num_cells = self.num_internal_cells + self.num_guard_cells * 2
+        self.num_guard_cells_left = num_guard_cells_left
+        self.num_guard_cells_right = num_guard_cells_right
+        self.num_cells = self.num_internal_cells + self.num_guard_cells_left + self.num_guard_cells_right
         ## self.min_position and max_position are with account for guard
-        self.min_position = min_position - self.num_guard_cells * self.steps
-        self.max_position = max_position + self.num_guard_cells * self.steps
+        self.min_position = min_position - self.num_guard_cells_left * self.steps
+        self.max_position = max_position + self.num_guard_cells_right * self.steps
         self.ex = self._create_component([0.5, 0.0, 0.0])
         self.ey = self._create_component([0.0, 0.5, 0.0])
         self.ez = self._create_component([0.0, 0.0, 0.5])

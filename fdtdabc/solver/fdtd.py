@@ -41,7 +41,7 @@ class Fdtd:
         dbz_dy = (grid.bz[i, j, k] - grid.bz[i, j_prev, k]) / dy
 
         # Yee's scheme: E_new = E_old + dt/(eps0 * mu0) * rot(B) = E_old + coeff * rot(B)
-        coeff = dt / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
+        coeff = dt / (scipy.constants.epsilon_0 * scipy.constants.mu_0) # also, coeff = dt * c^2, as c^2 = 1/(eps0 * mu0)
         grid.ex[i, j, k] += coeff * (dbz_dy - dby_dz)
         grid.ey[i, j, k] += coeff * (dbx_dz - dbz_dx)
         grid.ez[i, j, k] += coeff * (dby_dx - dbx_dy)
