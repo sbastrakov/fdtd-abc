@@ -13,15 +13,19 @@ class PML_SF:
     All units in SI
     """
 
-    def __init__(self, num_pml_cells, order = 4):
-        self.num_pml_cells = num_pml_cells
-        self.order = order
+    def __init__(self,  num_pml_cells_left, num_pml_cells_right, order = 4, exponential_time_stepping = True):
+        self.num_pml_cells_left = num_pml_cells_left
+        self.num_pml_cells_right = num_pml_cells_right
+        self.order = 4
+        self.exponential_time_stepping = exponential_time_stepping
         self._initialized = False
 
     def get_guard_size(self, num_internal_cells):
-        guard_size = self.num_pml_cells
-        guard_size[num_internal_cells == 1] = 0
-        return guard_size
+        guard_size_left = self.num_pml_cells_left
+        guard_size_left[num_internal_cells == 1] = 0
+        guard_size_right = self.num_pml_cells_right
+        guard_size_right[num_internal_cells == 1] = 0
+        return guard_size_left, guard_size_right
 
     def run_iteration(self, grid, dt):
         # Late initialization, currently only works if grid is the same all the time
@@ -33,7 +37,8 @@ class PML_SF:
 
     def _init(self, grid, dt):
         # for 1d and 2d cases disable PML along the fake dimensions
-        self.num_pml_cells[grid.num_cells == 1] = 0
+        self.num_pml_cells_left[grid.num_cells == 1] = 0
+        self.num_pml_cells_right[grid.num_cells == 1] = 0
         self._init_max_sigma(grid)
         # Initialize split fields
         self.exy = self._create_split_field(grid.ex)
@@ -60,12 +65,9 @@ class PML_SF:
     def _get_opt_sigma(self, grid):
         opt_sigma = np.array([0.0, 0.0, 0.0])
         for d in range(3):
-            if self.num_pml_cells[d]:
-                # Taflove 1st ed., from eq. (7.90)
-                #opt_sigma[d] = -math.log(1e-7) * (self.order + 1) * scipy.constants.c / (2.0 * self.num_pml_cells[d] * grid.steps[d])
-                opt_sigma[d] = 0.8 * (self.order + 1) * scipy.constants.c / grid.steps[d]
-                ## equation (15) divided by eps0 in CONVOLUTION PML (CPML): AN EFFICIENT FDTD IMPLEMENTATION OF THE CFS – PML FOR ARBITRARY MEDIA
-                ## basically the same is (17) in  Performance advantages of CPML over UPML absorbing boundary conditions in FDTD algorithm
+            opt_sigma[d] = 0.8 * (self.order + 1) * scipy.constants.c / grid.steps[d]
+            ## equation (15) divided by eps0 in CONVOLUTION PML (CPML): AN EFFICIENT FDTD IMPLEMENTATION OF THE CFS – PML FOR ARBITRARY MEDIA
+            ## basically the same is (17) in  Performance advantages of CPML over UPML absorbing boundary conditions in FDTD algorithm
         return opt_sigma
 
     def _create_split_field(self, full_field):
@@ -103,6 +105,9 @@ class PML_SF:
                     for d in range(3):
                         if sigma[d]:
                             is_internal[i, j, k] = 0.0
+                            if self.exponential_time_stepping:
+                                decay_coeff[d] = math.exp(-sigma[d] * dt)
+                                diff_coeff[d] = (1.0 - decay_coeff[d]) / sigma[d]
                     decay_coeff_x[i, j, k] = decay_coeff[0]
                     decay_coeff_y[i, j, k] = decay_coeff[1]
                     decay_coeff_z[i, j, k] = decay_coeff[2]
@@ -110,21 +115,25 @@ class PML_SF:
                     diff_coeff_y[i, j, k] = diff_coeff[1]
                     diff_coeff_z[i, j, k] = diff_coeff[2]
 
+    """This coefficient grows from 0 at PML-internal border to 1 at PML-external border"""
+    def _get_depth_coeff(self, grid, index):
+        coeff = np.array([0.0, 0.0, 0.0])
+        for d in range(0, 3):
+            coeff[d] = 0.0
+            if index[d] < self.num_pml_cells_left[d]:
+                coeff[d] = float(self.num_pml_cells_left[d] - index[d]) / self.num_pml_cells_left[d]
+            if index[d] > grid.num_cells[d] - self.num_pml_cells_right[d]:
+                coeff[d] = float(index[d] - grid.num_cells[d] + self.num_pml_cells_right[d]) / self.num_pml_cells_right[d]
+            if coeff[d] < 0.0:
+                coeff[d] = 0.0
+        return coeff
+
     # returns sigma/eps0 = sigma*/mu0
     def _get_sigma(self, grid, index):
         """Index is float 3d array, values normalized to cell size"""
-        # This needs to be a polynomial growth from 0 at border with internal area to max_sigma at outer border
-        sigma = np.array([0.0, 0.0, 0.0])
-        for d in range(0, 3):
-            coeff = 0.0
-            if index[d] < self.num_pml_cells[d]:
-                coeff = float(self.num_pml_cells[d] - index[d]) / self.num_pml_cells[d]
-            if index[d] > grid.num_cells[d] - self.num_pml_cells[d]:
-                coeff = float(index[d] - grid.num_cells[d] + self.num_pml_cells[d]) / self.num_pml_cells[d]
-            if coeff < 0.0:
-                coeff = 0.0
-            sigma[d] = self.max_sigma[d] * math.pow(coeff, self.order)
-        return sigma
+        depth_coeff = self._get_depth_coeff(grid, index)
+        grading_coeff = np.power(depth_coeff, self.order)
+        return self.max_sigma * grading_coeff
 
     def update_e(self, grid, dt):
         for i in range(0, grid.num_cells[0]):
@@ -148,13 +157,13 @@ class PML_SF:
         dbz_dy = (grid.bz[i, j, k] - grid.bz[i, j_prev, k]) / dy
 
         # special case for boundary indexes in PML: the external field values are zero
-        if (i == 0) and (self.num_pml_cells[0] > 0):
+        if (i == 0) and (self.num_pml_cells_left[0] > 0):
             dby_dx = (grid.by[i, j, k] - 0.0) / dx
             dbz_dx = (grid.bz[i, j, k] - 0.0) / dx
-        if (j == 0) and (self.num_pml_cells[1] > 0):
+        if (j == 0) and (self.num_pml_cells_left[1] > 0):
             dbx_dy = (grid.bx[i, j, k] - 0.0) / dy
             dbz_dy = (grid.bz[i, j, k] - 0.0) / dy
-        if (k == 0) and (self.num_pml_cells[2] > 0):
+        if (k == 0) and (self.num_pml_cells_left[2] > 0):
             dbx_dz = (grid.bx[i, j, k] - 0.0) / dz
             dby_dz = (grid.by[i, j, k] - 0.0) / dz
 
@@ -166,6 +175,7 @@ class PML_SF:
             grid.ez[i, j, k] += coeff * (dby_dx - dbx_dy)
         else:
             # Update split fields
+            #print("E " + str([i, j, k]) + ": decay = "  + str(self._e_decay_coeff_x[i, j, k]) + ", k = " + str(coeff_k[0]) + ", diff = " + str(self._e_diff_coeff_x[i, j, k]))
             self.eyx[i, j, k] = self._e_decay_coeff_x[i, j, k] * self.eyx[i, j, k] - self._e_diff_coeff_x[i, j, k] * dbz_dx / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
             self.ezx[i, j, k] = self._e_decay_coeff_x[i, j, k] * self.ezx[i, j, k] + self._e_diff_coeff_x[i, j, k] * dby_dx / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
             self.exy[i, j, k] = self._e_decay_coeff_y[i, j, k] * self.exy[i, j, k] + self._e_diff_coeff_y[i, j, k] * dbz_dy / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
@@ -200,13 +210,13 @@ class PML_SF:
         dez_dy = (grid.ez[i, j_next, k] - grid.ez[i, j, k]) / dy
 
         # special case for boundary indexes in PML: the external field values are zero
-        if (i == grid.num_cells[0] - 1) and (self.num_pml_cells[0] > 0):
+        if (i == grid.num_cells[0] - 1) and (self.num_pml_cells_right[0] > 0):
             dey_dx = (0.0 - grid.ey[i, j, k]) / dx
             dez_dx = (0.0 - grid.ez[i, j, k]) / dx
-        if (j == grid.num_cells[1] - 1) and (self.num_pml_cells[1] > 0):
+        if (j == grid.num_cells[1] - 1) and (self.num_pml_cells_right[1] > 0):
             dex_dy = (0.0 - grid.ex[i, j, k]) / dy
             dez_dy = (0.0 - grid.ez[i, j, k]) / dy
-        if (k == grid.num_cells[2] - 1) and (self.num_pml_cells[2] > 0):
+        if (k == grid.num_cells[2] - 1) and (self.num_pml_cells_right[2] > 0):
             dex_dz = (0.0 - grid.ex[i, j, k]) / dz
             dey_dz = (0.0 - grid.ey[i, j, k]) / dz
 
