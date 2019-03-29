@@ -1,5 +1,5 @@
 import grid.yee
-import solver.fdtd as fdtd
+import fdtd.solver as fdtd
 import solver.pml.convolutional as cpml
 import solver.pml.split_field as sfpml
 import initialconditions
