@@ -1,7 +1,7 @@
 import grid.yee
 import fdtd.solver as fdtd
-import solver.pml.convolutional as cpml
-import solver.pml.split_field as sfpml
+import pml.solver.convolutional as cpml
+import pml.solver.split_field as sfpml
 import initialconditions
 
 import math
