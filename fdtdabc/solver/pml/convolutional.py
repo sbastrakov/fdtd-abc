@@ -6,7 +6,7 @@ import copy
 import math
 
 
-class CPML:
+class Solver:
     """Yee FDTD solver with split-field PML, operates on Yee grid with split fields stored, uses CGS units
     Implementation and notation are based on the following paper:
     Branko D. Gvozdic, Dusan Z. Djurdjevic. Performance advantages of CPML over UPML absorbing boundary conditions in FDTD algorithm.

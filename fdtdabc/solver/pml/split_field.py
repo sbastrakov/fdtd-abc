@@ -33,7 +33,7 @@ class _Coeffs:
         self.is_internal = np.zeros(size)
 
 
-class PML_SF:
+class Solver:
     """
     Yee's FDTD solver with split-field PML
     Operates on Yee grid

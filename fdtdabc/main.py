@@ -1,7 +1,7 @@
 import grid.yee
-import solver.fdtd
-import solver.cpml
-import solver.pml_sf
+import solver.fdtd as fdtd
+import solver.pml.convolutional as cpml
+import solver.pml.split_field as sfpml
 import initialconditions
 
 import math
@@ -16,9 +16,9 @@ def init_solver():
     pml_right_width_cells = 10
     num_pml_cells_left = np.array([pml_left_width_cells, pml_left_width_cells, pml_left_width_cells])
     num_pml_cells_right = np.array([pml_right_width_cells, pml_right_width_cells, pml_right_width_cells])
-    #return solver.cpml.CPML(num_pml_cells_left, num_pml_cells_right, 3)
-    return solver.pml_sf.PML_SF(num_pml_cells_left, num_pml_cells_right, 3, True)
-    #return solver.fdtd.Fdtd()
+    #return cpml.Solver(num_pml_cells_left, num_pml_cells_right, 3)
+    return sfpml.Solver(num_pml_cells_left, num_pml_cells_right, 3, True)
+    #return fdtd.Solver()
 
 def init_grid(solver):
     # Set up grid, for now parameters are hardcoded here

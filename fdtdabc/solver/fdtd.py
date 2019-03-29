@@ -2,7 +2,7 @@ import numpy as np
 import scipy.constants
 
 
-class Fdtd:
+class Solver:
     """
     Yee's FDTD solver with periodic boundary conditions
     Operates on Yee grid
