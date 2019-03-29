@@ -6,6 +6,33 @@ import copy
 import math
 
 
+# A set of split fields for E or B
+class _Split_fields:
+    def __init__(self, field_x, field_y, field_z):
+        self.xy = self._create_component(field_x)
+        self.xz = self._create_component(field_x)
+        self.yx = self._create_component(field_y)
+        self.yz = self._create_component(field_y)
+        self.zx = self._create_component(field_z)
+        self.zy = self._create_component(field_z)
+
+    def _create_component(self, full_field):
+        split_field = copy.deepcopy(full_field)
+        split_field.values.fill(0.0)
+        return split_field
+
+# A set of coefficients for E or B field
+class _Coeffs:
+    def __init__(self, size):
+        self.decay_x = np.zeros(size)
+        self.decay_y = np.zeros(size)
+        self.decay_z = np.zeros(size)
+        self.diff_x = np.zeros(size)
+        self.diff_y = np.zeros(size)
+        self.diff_z = np.zeros(size)
+        self.is_internal = np.zeros(size)
+
+
 class PML_SF:
     """
     Yee's FDTD solver with split-field PML
@@ -16,7 +43,7 @@ class PML_SF:
     def __init__(self,  num_pml_cells_left, num_pml_cells_right, order = 4, exponential_time_stepping = True):
         self.num_pml_cells_left = num_pml_cells_left
         self.num_pml_cells_right = num_pml_cells_right
-        self.order = 4
+        self.order = order
         self.exponential_time_stepping = exponential_time_stepping
         self._initialized = False
 
@@ -40,19 +67,8 @@ class PML_SF:
         self.num_pml_cells_left[grid.num_cells == 1] = 0
         self.num_pml_cells_right[grid.num_cells == 1] = 0
         self._init_max_sigma(grid)
-        # Initialize split fields
-        self.exy = self._create_split_field(grid.ex)
-        self.exz = self._create_split_field(grid.ex)
-        self.eyx = self._create_split_field(grid.ey)
-        self.eyz = self._create_split_field(grid.ey)
-        self.ezx = self._create_split_field(grid.ez)
-        self.ezy = self._create_split_field(grid.ez)
-        self.bxy = self._create_split_field(grid.bx)
-        self.bxz = self._create_split_field(grid.bx)
-        self.byx = self._create_split_field(grid.by)
-        self.byz = self._create_split_field(grid.by)
-        self.bzx = self._create_split_field(grid.bz)
-        self.bzy = self._create_split_field(grid.bz)
+        self._e_split = _Split_fields(grid.ex, grid.ey, grid.ez)
+        self._b_split = _Split_fields(grid.bx, grid.by, grid.bz)
         self._init_coeffs(grid, dt)
         self._initialized = True
 
@@ -61,59 +77,47 @@ class PML_SF:
         sigma_opt_ratio = 1.0
         self.max_sigma = sigma_opt_ratio * opt_sigma
 
-    # this value is for sigma/eps0 = sigma*/mu0
+    # this value is for sigma E
     def _get_opt_sigma(self, grid):
         opt_sigma = np.array([0.0, 0.0, 0.0])
+        ## equation (15) in CONVOLUTION PML (CPML): AN EFFICIENT FDTD IMPLEMENTATION OF THE CFS – PML FOR ARBITRARY MEDIA
+        ## the same is (17) in  Performance advantages of CPML over UPML absorbing boundary conditions in FDTD algorithm
         for d in range(3):
-            opt_sigma[d] = 0.8 * (self.order + 1) * scipy.constants.c / grid.steps[d]
-            ## equation (15) divided by eps0 in CONVOLUTION PML (CPML): AN EFFICIENT FDTD IMPLEMENTATION OF THE CFS – PML FOR ARBITRARY MEDIA
-            ## basically the same is (17) in  Performance advantages of CPML over UPML absorbing boundary conditions in FDTD algorithm
+            opt_sigma[d] = 0.8 * (self.order + 1) / (scipy.constants.value('characteristic impedance of vacuum') * grid.steps[d])
         return opt_sigma
 
-    def _create_split_field(self, full_field):
-        split_field = copy.deepcopy(full_field)
-        split_field.values.fill(0.0)
-        return split_field
 
     def _init_coeffs(self, grid, dt):
-        self._e_decay_coeff_x = np.zeros(grid.num_cells)
-        self._e_decay_coeff_y = np.zeros(grid.num_cells)
-        self._e_decay_coeff_z = np.zeros(grid.num_cells)
-        self._e_diff_coeff_x = np.zeros(grid.num_cells)
-        self._e_diff_coeff_y = np.zeros(grid.num_cells)
-        self._e_diff_coeff_z = np.zeros(grid.num_cells)
-        self._e_is_internal = np.zeros(grid.num_cells)
-        self._b_decay_coeff_x = np.zeros(grid.num_cells)
-        self._b_decay_coeff_y = np.zeros(grid.num_cells)
-        self._b_decay_coeff_z = np.zeros(grid.num_cells)
-        self._b_diff_coeff_x = np.zeros(grid.num_cells)
-        self._b_diff_coeff_y = np.zeros(grid.num_cells)
-        self._b_diff_coeff_z = np.zeros(grid.num_cells)
-        self._b_is_internal = np.zeros(grid.num_cells)
-        self._init_coeffs_field(grid, np.array([0.0, 0.0, 0.0]), self._e_decay_coeff_x, self._e_decay_coeff_y, self._e_decay_coeff_z, self._e_diff_coeff_x, self._e_diff_coeff_y, self._e_diff_coeff_z, self._e_is_internal, dt)
-        self._init_coeffs_field(grid, np.array([0.5, 0.5, 0.5]), self._b_decay_coeff_x, self._b_decay_coeff_y, self._b_decay_coeff_z, self._b_diff_coeff_x, self._b_diff_coeff_y, self._b_diff_coeff_z, self._b_is_internal, 0.5 * dt)
+        self._e_coeffs = _Coeffs(grid.num_cells)
+        self._compute_coeffs(grid, np.array([0.0, 0.0, 0.0]), self._e_coeffs, dt)
+        self._b_coeffs = _Coeffs(grid.num_cells)
+        self._compute_coeffs(grid, np.array([0.5, 0.5, 0.5]), self._b_coeffs, 0.5 * dt)
 
-    def _init_coeffs_field(self, grid, shift, decay_coeff_x, decay_coeff_y, decay_coeff_z, diff_coeff_x, diff_coeff_y, diff_coeff_z, is_internal, dt):
+    def _compute_coeffs(self, grid, shift, coeffs, dt):
         for i in range(grid.num_cells[0]):
             for j in range(grid.num_cells[1]):
                 for k in range(grid.num_cells[2]):
                     sigma_index = np.array([i, j, k]) + shift
                     sigma = self._get_sigma(grid, sigma_index)
-                    decay_coeff = (1.0 - 0.5 * sigma * dt) / (1.0 + 0.5 * sigma * dt)
-                    diff_coeff = np.array([dt, dt, dt]) / (1.0 + 0.5 * sigma * dt)
-                    is_internal[i, j, k] = 1.0
+                    sigma_normalized = sigma / scipy.constants.epsilon_0 # due to normalization can use for both E and B
+                    # Coefficients for a simple scheme with no exponential stepping
+                    decay_coeff = (1.0 - 0.5 * sigma_normalized * dt) / (1.0 + 0.5 * sigma_normalized * dt)
+                    diff_coeff = np.array([dt, dt, dt]) / (1.0 + 0.5 * sigma_normalized * dt)
+                    coeffs.is_internal[i, j, k] = self._is_internal(grid, sigma_index)
                     for d in range(3):
                         if sigma[d]:
-                            is_internal[i, j, k] = 0.0
                             if self.exponential_time_stepping:
-                                decay_coeff[d] = math.exp(-sigma[d] * dt)
-                                diff_coeff[d] = (1.0 - decay_coeff[d]) / sigma[d]
-                    decay_coeff_x[i, j, k] = decay_coeff[0]
-                    decay_coeff_y[i, j, k] = decay_coeff[1]
-                    decay_coeff_z[i, j, k] = decay_coeff[2]
-                    diff_coeff_x[i, j, k] = diff_coeff[0]
-                    diff_coeff_y[i, j, k] = diff_coeff[1]
-                    diff_coeff_z[i, j, k] = diff_coeff[2]
+                                # Coefficients for exponential stepping based on (3.49) in Taflove 1st ed.
+                                # diff_coeff has reversed sign to become positive
+                                # and uses sigma_normalized and not sigma in the denominator
+                                decay_coeff[d] = math.exp(-sigma_normalized[d] * dt)
+                                diff_coeff[d] = (1.0 - decay_coeff[d]) / sigma_normalized[d]
+                    coeffs.decay_x[i, j, k] = decay_coeff[0]
+                    coeffs.decay_y[i, j, k] = decay_coeff[1]
+                    coeffs.decay_z[i, j, k] = decay_coeff[2]
+                    coeffs.diff_x[i, j, k] = diff_coeff[0]
+                    coeffs.diff_y[i, j, k] = diff_coeff[1]
+                    coeffs.diff_z[i, j, k] = diff_coeff[2]
 
     """This coefficient grows from 0 at PML-internal border to 1 at PML-external border"""
     def _get_depth_coeff(self, grid, index):
@@ -128,12 +132,19 @@ class PML_SF:
                 coeff[d] = 0.0
         return coeff
 
-    # returns sigma/eps0 = sigma*/mu0
+    # returns sigma for E
     def _get_sigma(self, grid, index):
         """Index is float 3d array, values normalized to cell size"""
         depth_coeff = self._get_depth_coeff(grid, index)
         grading_coeff = np.power(depth_coeff, self.order)
         return self.max_sigma * grading_coeff
+
+    def _is_internal(self, grid, index):
+        depth_coeff = self._get_depth_coeff(grid, index)
+        if np.array_equal(depth_coeff, np.array([0.0, 0.0, 0.0])):
+            return 1.0
+        else:
+            return 0.0
 
     def update_e(self, grid, dt):
         for i in range(0, grid.num_cells[0]):
@@ -167,25 +178,27 @@ class PML_SF:
             dbx_dz = (grid.bx[i, j, k] - 0.0) / dz
             dby_dz = (grid.by[i, j, k] - 0.0) / dz
 
-        if self._e_is_internal[i, j, k]:
+        c2 = 1.0 / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
+        coeffs = self._e_coeffs
+        if coeffs.is_internal[i, j, k]:
             # Standard Yee's scheme
-            coeff = dt / (scipy.constants.epsilon_0 * scipy.constants.mu_0) # also, coeff = dt * c^2, as c^2 = 1/(eps0 * mu0)
+            coeff = dt * c2
             grid.ex[i, j, k] += coeff * (dbz_dy - dby_dz)
             grid.ey[i, j, k] += coeff * (dbx_dz - dbz_dx)
             grid.ez[i, j, k] += coeff * (dby_dx - dbx_dy)
         else:
             # Update split fields
-            #print("E " + str([i, j, k]) + ": decay = "  + str(self._e_decay_coeff_x[i, j, k]) + ", k = " + str(coeff_k[0]) + ", diff = " + str(self._e_diff_coeff_x[i, j, k]))
-            self.eyx[i, j, k] = self._e_decay_coeff_x[i, j, k] * self.eyx[i, j, k] - self._e_diff_coeff_x[i, j, k] * dbz_dx / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
-            self.ezx[i, j, k] = self._e_decay_coeff_x[i, j, k] * self.ezx[i, j, k] + self._e_diff_coeff_x[i, j, k] * dby_dx / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
-            self.exy[i, j, k] = self._e_decay_coeff_y[i, j, k] * self.exy[i, j, k] + self._e_diff_coeff_y[i, j, k] * dbz_dy / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
-            self.ezy[i, j, k] = self._e_decay_coeff_y[i, j, k] * self.ezy[i, j, k] - self._e_diff_coeff_y[i, j, k] * dbx_dy / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
-            self.exz[i, j, k] = self._e_decay_coeff_z[i, j, k] * self.exz[i, j, k] - self._e_diff_coeff_z[i, j, k] * dby_dz / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
-            self.eyz[i, j, k] = self._e_decay_coeff_z[i, j, k] * self.eyz[i, j, k] + self._e_diff_coeff_z[i, j, k] * dbx_dz / (scipy.constants.epsilon_0 * scipy.constants.mu_0)
+            e = self._e_split
+            e.yx[i, j, k] = coeffs.decay_x[i, j, k] * e.yx[i, j, k] - coeffs.diff_x[i, j, k] * c2 * dbz_dx
+            e.zx[i, j, k] = coeffs.decay_x[i, j, k] * e.zx[i, j, k] + coeffs.diff_x[i, j, k] * c2 * dby_dx
+            e.xy[i, j, k] = coeffs.decay_y[i, j, k] * e.xy[i, j, k] + coeffs.diff_y[i, j, k] * c2 * dbz_dy
+            e.zy[i, j, k] = coeffs.decay_y[i, j, k] * e.zy[i, j, k] - coeffs.diff_y[i, j, k] * c2 * dbx_dy
+            e.xz[i, j, k] = coeffs.decay_z[i, j, k] * e.xz[i, j, k] - coeffs.diff_z[i, j, k] * c2 * dby_dz
+            e.yz[i, j, k] = coeffs.decay_z[i, j, k] * e.yz[i, j, k] + coeffs.diff_z[i, j, k] * c2 * dbx_dz
             # Sum up split fields to get full fields
-            grid.ex[i, j, k] = self.exy[i, j, k] + self.exz[i, j, k]
-            grid.ey[i, j, k] = self.eyx[i, j, k] + self.eyz[i, j, k]
-            grid.ez[i, j, k] = self.ezx[i, j, k] + self.ezy[i, j, k]
+            grid.ex[i, j, k] = e.xy[i, j, k] + e.xz[i, j, k]
+            grid.ey[i, j, k] = e.yx[i, j, k] + e.yz[i, j, k]
+            grid.ez[i, j, k] = e.zx[i, j, k] + e.zy[i, j, k]
 
     def update_b(self, grid, dt):
         for i in range(0, grid.num_cells[0]):
@@ -220,22 +233,24 @@ class PML_SF:
             dex_dz = (0.0 - grid.ex[i, j, k]) / dz
             dey_dz = (0.0 - grid.ey[i, j, k]) / dz
 
-        if self._b_is_internal[i, j, k]:
+        coeffs = self._b_coeffs
+        if coeffs.is_internal[i, j, k]:
             # Standard Yee's scheme
-            coeff = -dt
-            grid.bx[i, j, k] += coeff * (dez_dy - dey_dz)
-            grid.by[i, j, k] += coeff * (dex_dz - dez_dx)
-            grid.bz[i, j, k] += coeff * (dey_dx - dex_dy)
+            coeff = dt
+            grid.bx[i, j, k] += coeff * (dey_dz - dez_dy)
+            grid.by[i, j, k] += coeff * (dez_dx - dex_dz)
+            grid.bz[i, j, k] += coeff * (dex_dy - dey_dx)
         else:
             # Update split fields
-            self.byx[i, j, k] = self._b_decay_coeff_x[i, j, k] * self.byx[i, j, k] + self._b_diff_coeff_x[i, j, k] * dez_dx
-            self.bzx[i, j, k] = self._b_decay_coeff_x[i, j, k] * self.bzx[i, j, k] - self._b_diff_coeff_x[i, j, k] * dey_dx
-            self.bxy[i, j, k] = self._b_decay_coeff_y[i, j, k] * self.bxy[i, j, k] - self._b_diff_coeff_y[i, j, k] * dez_dy
-            self.bzy[i, j, k] = self._b_decay_coeff_y[i, j, k] * self.bzy[i, j, k] + self._b_diff_coeff_y[i, j, k] * dex_dy
-            self.bxz[i, j, k] = self._b_decay_coeff_z[i, j, k] * self.bxz[i, j, k] + self._b_diff_coeff_z[i, j, k] * dey_dz
-            self.byz[i, j, k] = self._b_decay_coeff_z[i, j, k] * self.byz[i, j, k] - self._b_diff_coeff_z[i, j, k] * dex_dz
+            b = self._b_split
+            b.yx[i, j, k] = coeffs.decay_x[i, j, k] * b.yx[i, j, k] + coeffs.diff_x[i, j, k] * dez_dx
+            b.zx[i, j, k] = coeffs.decay_x[i, j, k] * b.zx[i, j, k] - coeffs.diff_x[i, j, k] * dey_dx
+            b.xy[i, j, k] = coeffs.decay_y[i, j, k] * b.xy[i, j, k] - coeffs.diff_y[i, j, k] * dez_dy
+            b.zy[i, j, k] = coeffs.decay_y[i, j, k] * b.zy[i, j, k] + coeffs.diff_y[i, j, k] * dex_dy
+            b.xz[i, j, k] = coeffs.decay_z[i, j, k] * b.xz[i, j, k] + coeffs.diff_z[i, j, k] * dey_dz
+            b.yz[i, j, k] = coeffs.decay_z[i, j, k] * b.yz[i, j, k] - coeffs.diff_z[i, j, k] * dex_dz
             # Sum up split fields to get full fields
-            grid.bx[i, j, k] = self.bxy[i, j, k] + self.bxz[i, j, k]
-            grid.by[i, j, k] = self.byx[i, j, k] + self.byz[i, j, k]
-            grid.bz[i, j, k] = self.bzx[i, j, k] + self.bzy[i, j, k]
+            grid.bx[i, j, k] = b.xy[i, j, k] + b.xz[i, j, k]
+            grid.by[i, j, k] = b.yx[i, j, k] + b.yz[i, j, k]
+            grid.bz[i, j, k] = b.zx[i, j, k] + b.zy[i, j, k]
 

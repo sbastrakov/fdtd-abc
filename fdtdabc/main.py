@@ -1,7 +1,6 @@
 import grid.yee
 import solver.fdtd
 import solver.cpml
-import solver.cpml_fdtdxx
 import solver.pml_sf
 import initialconditions
 
@@ -13,20 +12,19 @@ import scipy.constants
 
 def init_solver():
     # Set up solver, for now parameters are hardcoded here
-    pml_left_width_cells = 8
-    pml_right_width_cells = 0
+    pml_left_width_cells = 10
+    pml_right_width_cells = 10
     num_pml_cells_left = np.array([pml_left_width_cells, pml_left_width_cells, pml_left_width_cells])
     num_pml_cells_right = np.array([pml_right_width_cells, pml_right_width_cells, pml_right_width_cells])
-    #return solver.cpml_fdtdxx.CPML(num_pml_cells)
-    return solver.cpml.CPML(num_pml_cells_left, num_pml_cells_right)
-    #return solver.pml_sf.PML_SF(num_pml_cells)
+    #return solver.cpml.CPML(num_pml_cells_left, num_pml_cells_right, 3)
+    return solver.pml_sf.PML_SF(num_pml_cells_left, num_pml_cells_right, 3, True)
     #return solver.fdtd.Fdtd()
 
 def init_grid(solver):
     # Set up grid, for now parameters are hardcoded here
     min_position = np.array([0.0, 0.0, 0.0])
-    max_position = np.array([1e-3, 1e-3, 1e-3])
-    num_internal_cells = np.array([4, 1, 1]) # modify this
+    max_position = np.array([1e-3, 1e-3, 1e-3]) # 1 mm each side
+    num_internal_cells = np.array([64, 64, 1]) # modify this
     num_guard_cells_left, num_guard_cells_right = np.array(solver.get_guard_size(num_internal_cells)) # do not modify this
     gr = grid.yee.Yee_grid(min_position, max_position, num_internal_cells, num_guard_cells_left, num_guard_cells_right)
     # Set up initial conditions as a plane wave in Ey, Bz, runs along x in positive direction
@@ -67,16 +65,28 @@ class Plot:
         plt.show()
 
 
-def add_source(grid, iteration):
+def add_source(grid, iteration, dt):
+    #add_soft_gaussian_source(grid, iteration, dt)
     #add_soft_source(grid, iteration)
     add_hard_source(grid, iteration)
+
+def add_soft_gaussian_source(grid, iteration, dt):
+    gw = 30e-15 # 30 ps
+    td = 4 * gw
+    t = iteration * dt
+    normalized_t = (t - td) / gw
+    value = -2.0 * normalized_t * math.exp(-normalized_t * normalized_t)
+    i_center = grid.num_cells[0] // 2
+    j_center = grid.num_cells[1] // 2
+    k_center = grid.num_cells[2] // 2
+    grid.ez[i_center, j_center, k_center] += value
 
 def add_soft_source(grid, iteration):
     duration_iterations = 10
     if iteration > duration_iterations:
         return
-    diration_center = duration_iterations / 2
-    coeff_t = math.pow(math.sin(math.pi * (iteration - diration_center) / duration_iterations), 2)
+    duration_center = duration_iterations / 2
+    coeff_t = math.pow(math.sin(math.pi * (iteration - duration_center) / duration_iterations), 2)
     width = [8, 8, 1]
     i_center = grid.num_cells[0] // 2
     j_center = grid.num_cells[1] // 2
@@ -99,9 +109,9 @@ def add_hard_source(grid, iteration):
     value = (10.0 - 15 * math.cos(math.pi * iteration / duration_center) + 6 * math.cos(2.0 * math.pi * iteration / duration_center) - math.cos(3.0 * math.pi * iteration / duration_center)) / 32.0
     if iteration > duration_iterations:
         value = 0.0
-    #grid.ez[i_center, j_center, k_center] = value
-    for j in range(grid.num_cells[1]):
-        grid.ez[i_center, j, k_center] = value
+    grid.ez[i_center, j_center, k_center] = value
+    #for j in range(grid.num_cells[1]):
+    #    grid.ez[i_center, j, k_center] = value
 
 def print_energy(grid, iteration):
     period = 20
@@ -142,14 +152,15 @@ def main():
     ratio_of_cfl_limit = 0.99
     dt = ratio_of_cfl_limit * dt_cfl_limit
 
-    num_iterations = 1
-    plotting_period = 10 # period to make plots, set to 0 to disable plotting
+    total_t = 1.143945e-9 # ns
+    num_iterations = 200
+    plotting_period = 20 # period to make plots, set to 0 to disable plotting
 
     plot = Plot(plotting_period)
     for iteration in range(num_iterations):
         print_energy(grid, iteration)
         plot.add_frame(grid, iteration)
-        add_source(grid, iteration)
+        add_source(grid, iteration, dt)
         solver.run_iteration(grid, dt)
     plot.animate()
 
