@@ -2,35 +2,10 @@ import numpy as np
 import scipy.constants
 from scipy.constants import codata
 
-import copy
+from pml.data.coefficients import Coefficients
+from pml.data.fields import Fields as SplitFields
+
 import math
-
-
-# A set of split fields for E or B
-class _Split_fields:
-    def __init__(self, field_x, field_y, field_z):
-        self.xy = self._create_component(field_x)
-        self.xz = self._create_component(field_x)
-        self.yx = self._create_component(field_y)
-        self.yz = self._create_component(field_y)
-        self.zx = self._create_component(field_z)
-        self.zy = self._create_component(field_z)
-
-    def _create_component(self, full_field):
-        split_field = copy.deepcopy(full_field)
-        split_field.values.fill(0.0)
-        return split_field
-
-# A set of coefficients for E or B field
-class _Coeffs:
-    def __init__(self, size):
-        self.decay_x = np.zeros(size)
-        self.decay_y = np.zeros(size)
-        self.decay_z = np.zeros(size)
-        self.diff_x = np.zeros(size)
-        self.diff_y = np.zeros(size)
-        self.diff_z = np.zeros(size)
-        self.is_internal = np.zeros(size)
 
 
 class Solver:
@@ -67,8 +42,8 @@ class Solver:
         self.num_pml_cells_left[grid.num_cells == 1] = 0
         self.num_pml_cells_right[grid.num_cells == 1] = 0
         self._init_max_sigma(grid)
-        self._e_split = _Split_fields(grid.ex, grid.ey, grid.ez)
-        self._b_split = _Split_fields(grid.bx, grid.by, grid.bz)
+        self._e_split = SplitFields(grid.ex, grid.ey, grid.ez)
+        self._b_split = SplitFields(grid.bx, grid.by, grid.bz)
         self._init_coeffs(grid, dt)
         self._initialized = True
 
@@ -88,9 +63,9 @@ class Solver:
 
 
     def _init_coeffs(self, grid, dt):
-        self._e_coeffs = _Coeffs(grid.num_cells)
+        self._e_coeffs = Coefficients(grid.num_cells)
         self._compute_coeffs(grid, np.array([0.0, 0.0, 0.0]), self._e_coeffs, dt)
-        self._b_coeffs = _Coeffs(grid.num_cells)
+        self._b_coeffs = Coefficients(grid.num_cells)
         self._compute_coeffs(grid, np.array([0.5, 0.5, 0.5]), self._b_coeffs, 0.5 * dt)
 
     def _compute_coeffs(self, grid, shift, coeffs, dt):
