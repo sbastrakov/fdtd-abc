@@ -2,8 +2,8 @@ from grid.scalarfield import Scalar_field
 
 import numpy as np
 
-class Yee_grid:
-    """Values of field components on a Yee grid. E values on midedges, B values on midfaces"""
+class YeeGrid:
+    """Values of field components on a Yee grid. E values on middles of edges, B values on middles of faces"""
 
     def __init__(self, min_position, max_position, num_internal_cells, num_guard_cells_left, num_guard_cells_right):
         """Takes the box min and max position (internal area, without guard), size of internal area,

@@ -1,5 +1,5 @@
 import fdtd.solver as fdtd
-import grid.yee
+from grid.yee import YeeGrid as Grid
 from output.energy import Printer as EnergyPrinter
 from output.plot import Plot
 import pml.solver.convolutional as cpml
@@ -25,8 +25,8 @@ def init_grid(solver):
     max_position = np.array([1e-3, 1e-3, 1e-3]) # 1 mm each side
     num_internal_cells = np.array([64, 64, 1]) # modify this
     num_guard_cells_left, num_guard_cells_right = np.array(solver.get_guard_size(num_internal_cells)) # do not modify this
-    gr = grid.yee.Yee_grid(min_position, max_position, num_internal_cells, num_guard_cells_left, num_guard_cells_right)
-    return gr
+    grid = Grid(min_position, max_position, num_internal_cells, num_guard_cells_left, num_guard_cells_right)
+    return grid
 
 
 def add_source(grid, iteration, dt):
