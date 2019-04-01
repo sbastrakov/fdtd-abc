@@ -1,8 +1,8 @@
-import grid.yee
 import fdtd.solver as fdtd
+import grid.yee
+from output.energy import Printer as EnergyPrinter
 import pml.solver.convolutional as cpml
 import pml.solver.split_field as sfpml
-import initialconditions
 
 import math
 import matplotlib.pyplot as plt
@@ -27,9 +27,6 @@ def init_grid(solver):
     num_internal_cells = np.array([64, 64, 1]) # modify this
     num_guard_cells_left, num_guard_cells_right = np.array(solver.get_guard_size(num_internal_cells)) # do not modify this
     gr = grid.yee.Yee_grid(min_position, max_position, num_internal_cells, num_guard_cells_left, num_guard_cells_right)
-    # Set up initial conditions as a plane wave in Ey, Bz, runs along x in positive direction
-    #num_periods = 4
-    #initialconditions.planewave(gr, num_periods)
     return gr
 
 class Plot:
@@ -113,35 +110,7 @@ def add_hard_source(grid, iteration):
     #for j in range(grid.num_cells[1]):
     #    grid.ez[i_center, j, k_center] = value
 
-def print_energy(grid, iteration):
-    period = 20
-    if iteration % period != 0:
-        return
-    e_energy = 0.0
-    b_energy = 0.0
-    e_energy_internal = 0.0
-    b_energy_internal = 0.0
-    for i in range(grid.num_cells[0]):
-        for j in range(grid.num_cells[1]):
-            # for k in range(grid.num_cells[2]):
-            #     node_value = grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
-            #     node_value += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
-            #     energy += node_value * grid.steps[0] * grid.steps[1] * grid.steps[2]
-            k = grid.num_cells[2] // 2
-            e_energy += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
-            b_energy += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
-            if (i >= grid.num_guard_cells_left[0]) and (i < grid.num_cells[0] - grid.num_guard_cells_right[0]) and (j >= grid.num_guard_cells_left[1]) and (j < grid.num_cells[1] - grid.num_guard_cells_right[1]):
-                e_energy_internal += grid.ex[i, j, k] * grid.ex[i, j, k] + grid.ey[i, j, k] * grid.ey[i, j, k] + grid.ez[i, j, k] * grid.ez[i, j, k]
-                b_energy_internal += grid.bx[i, j, k] * grid.bx[i, j, k] + grid.by[i, j, k] * grid.by[i, j, k] + grid.bz[i, j, k] * grid.bz[i, j, k]
-    e_factor = 0.5 * scipy.constants.epsilon_0 * grid.steps[0] * grid.steps[1] * grid.steps[2]
-    e_energy *= e_factor
-    e_energy_internal *= e_factor
-    b_factor = 0.5 / scipy.constants.mu_0 * grid.steps[0] * grid.steps[1] * grid.steps[2]
-    b_energy *= b_factor
-    b_energy_internal *= b_factor
-    energy = e_energy + b_energy
-    energy_internal = e_energy_internal + b_energy_internal
-    print(str(iteration) + " " + str(e_energy) + " " + str(b_energy) + " " + str(e_energy_internal) + " " + str(b_energy_internal))
+
 
 def main():
     solver = init_solver()
@@ -154,11 +123,12 @@ def main():
 
     total_t = 1.143945e-9 # ns
     num_iterations = 200
-    plotting_period = 20 # period to make plots, set to 0 to disable plotting
+    output_period = 20 # period to make plots, set to 0 to disable plotting
 
-    plot = Plot(plotting_period)
+    energy_printer = EnergyPrinter(output_period)
+    plot = Plot(output_period)
     for iteration in range(num_iterations):
-        print_energy(grid, iteration)
+        energy_printer.print(grid, iteration)
         plot.add_frame(grid, iteration)
         add_source(grid, iteration, dt)
         solver.run_iteration(grid, dt)
