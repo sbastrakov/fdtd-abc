@@ -1,8 +1,6 @@
 import numpy as np
 import scipy.constants
 
-from pml.data.coefficients import Coefficients
-from pml.data.fields import Fields as SplitFields
 from pml.parameters.polymonial_grading import Parameter
 from pml.parameters.sigma_max import get_sigma_max
 from pml.solver.base import Solver as SolverBase
@@ -19,13 +17,13 @@ class Solver(SolverBase):
 
     def __init__(self,  num_pml_cells_left, num_pml_cells_right, order = 4, exponential_time_stepping = True):
         SolverBase.__init__(self, num_pml_cells_left, num_pml_cells_right)
-        self.order = order
-        self.exponential_time_stepping = exponential_time_stepping
+        self._order = order
+        self._exponential_time_stepping = exponential_time_stepping
 
     def _init_coeffs(self, grid, dt):
         sigma_min = np.zeros(3)
-        sigma_max = get_sigma_max(grid.steps, self.order)
-        self._sigma = Parameter(grid, self.num_pml_cells_left, self.num_pml_cells_right, sigma_min, sigma_max, self.order, True)
+        sigma_max = get_sigma_max(grid.steps, self._order)
+        self._sigma = Parameter(grid, self.num_pml_cells_left, self.num_pml_cells_right, sigma_min, sigma_max, self._order, True)
         self._is_internal = Parameter(grid, self.num_pml_cells_left, self.num_pml_cells_right, np.zeros(3), np.ones(3), 1, True)
         SolverBase._init_coeffs(self, grid, dt)
 
@@ -33,12 +31,13 @@ class Solver(SolverBase):
         index = np.array([i, j, k]) + shift
         sigma = self._sigma.get(index)
         sigma_normalized = sigma / scipy.constants.epsilon_0 # due to normalization can use for both E and B
-        # Coefficients for a simple scheme with no exponential stepping
+        # Coefficients for a simple scheme with no exponential stepping,
+        # values overwritten later for exponential stepping
         decay_coeff = (1.0 - 0.5 * sigma_normalized * dt) / (1.0 + 0.5 * sigma_normalized * dt)
         diff_coeff = np.array([dt, dt, dt]) / (1.0 + 0.5 * sigma_normalized * dt)
         coeffs.is_internal[i, j, k] = np.array_equal(self._is_internal.get(index), np.zeros(3))
         for d in range(3):
-            if self.exponential_time_stepping and sigma[d]:
+            if self._exponential_time_stepping and sigma[d]:
                 # Coefficients for exponential stepping based on (3.49) in Taflove 1st ed.
                 # diff_coeff has reversed sign to become positive
                 # and uses sigma_normalized and not sigma in the denominator
