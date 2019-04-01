@@ -1,9 +1,10 @@
 import numpy as np
 import scipy.constants
-from scipy.constants import codata
 
 from pml.data.coefficients import Coefficients
 from pml.data.fields import Fields as SplitFields
+from pml.parameters.polymonial_grading import Parameter
+from pml.parameters.sigma_max import get_sigma_max
 from pml.solver.base import Solver as SolverBase
 
 import math
@@ -21,32 +22,21 @@ class Solver(SolverBase):
         self.order = order
         self.exponential_time_stepping = exponential_time_stepping
 
-    def _init(self, grid, dt):
-        self._init_max_sigma(grid)
-        SolverBase._init(self, grid, dt)
+    def _init_coeffs(self, grid, dt):
+        sigma_min = np.zeros(3)
+        sigma_max = get_sigma_max(grid.steps, self.order)
+        self._sigma = Parameter(grid, self.num_pml_cells_left, self.num_pml_cells_right, sigma_min, sigma_max, self.order, True)
+        self._is_internal = Parameter(grid, self.num_pml_cells_left, self.num_pml_cells_right, np.zeros(3), np.ones(3), 1, True)
+        SolverBase._init_coeffs(self, grid, dt)
 
-    def _init_max_sigma(self, grid):
-        opt_sigma = self._get_opt_sigma(grid)
-        sigma_opt_ratio = 1.0
-        self.max_sigma = sigma_opt_ratio * opt_sigma
-
-    # this value is for sigma E
-    def _get_opt_sigma(self, grid):
-        opt_sigma = np.array([0.0, 0.0, 0.0])
-        ## equation (15) in CONVOLUTION PML (CPML): AN EFFICIENT FDTD IMPLEMENTATION OF THE CFS – PML FOR ARBITRARY MEDIA
-        ## the same is (17) in  Performance advantages of CPML over UPML absorbing boundary conditions in FDTD algorithm
-        for d in range(3):
-            opt_sigma[d] = 0.8 * (self.order + 1) / (scipy.constants.value('characteristic impedance of vacuum') * grid.steps[d])
-        return opt_sigma
-
-    def _compute_coeff(self, grid, coeffs, i, j, k, shift, dt):
+    def _compute_coeff(self, coeffs, i, j, k, shift, dt):
         index = np.array([i, j, k]) + shift
-        sigma = self._get_sigma(grid, index)
+        sigma = self._sigma.get(index)
         sigma_normalized = sigma / scipy.constants.epsilon_0 # due to normalization can use for both E and B
         # Coefficients for a simple scheme with no exponential stepping
         decay_coeff = (1.0 - 0.5 * sigma_normalized * dt) / (1.0 + 0.5 * sigma_normalized * dt)
         diff_coeff = np.array([dt, dt, dt]) / (1.0 + 0.5 * sigma_normalized * dt)
-        coeffs.is_internal[i, j, k] = self._is_internal(grid, index)
+        coeffs.is_internal[i, j, k] = np.array_equal(self._is_internal.get(index), np.zeros(3))
         for d in range(3):
             if self.exponential_time_stepping and sigma[d]:
                 # Coefficients for exponential stepping based on (3.49) in Taflove 1st ed.
@@ -60,33 +50,6 @@ class Solver(SolverBase):
         coeffs.diff_x[i, j, k] = diff_coeff[0]
         coeffs.diff_y[i, j, k] = diff_coeff[1]
         coeffs.diff_z[i, j, k] = diff_coeff[2]
-
-    """This coefficient grows from 0 at PML-internal border to 1 at PML-external border"""
-    def _get_depth_coeff(self, grid, index):
-        coeff = np.array([0.0, 0.0, 0.0])
-        for d in range(0, 3):
-            coeff[d] = 0.0
-            if index[d] < self.num_pml_cells_left[d]:
-                coeff[d] = float(self.num_pml_cells_left[d] - index[d]) / self.num_pml_cells_left[d]
-            if index[d] > grid.num_cells[d] - self.num_pml_cells_right[d]:
-                coeff[d] = float(index[d] - grid.num_cells[d] + self.num_pml_cells_right[d]) / self.num_pml_cells_right[d]
-            if coeff[d] < 0.0:
-                coeff[d] = 0.0
-        return coeff
-
-    # returns sigma for E
-    def _get_sigma(self, grid, index):
-        """Index is float 3d array, values normalized to cell size"""
-        depth_coeff = self._get_depth_coeff(grid, index)
-        grading_coeff = np.power(depth_coeff, self.order)
-        return self.max_sigma * grading_coeff
-
-    def _is_internal(self, grid, index):
-        depth_coeff = self._get_depth_coeff(grid, index)
-        if np.array_equal(depth_coeff, np.array([0.0, 0.0, 0.0])):
-            return 1.0
-        else:
-            return 0.0
 
     def _update_pml_e_element(self, grid, dt, i, j, k, dbx_dy, dbx_dz, dby_dx, dby_dz, dbz_dx, dbz_dy):
         c2 = 1.0 / (scipy.constants.epsilon_0 * scipy.constants.mu_0)

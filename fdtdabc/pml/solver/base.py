@@ -54,7 +54,7 @@ class Solver:
         for i in range(grid.num_cells[0]):
             for j in range(grid.num_cells[1]):
                 for k in range(grid.num_cells[2]):
-                    self._compute_coeff(grid, coeffs, i, j, k, shift, dt)
+                    self._compute_coeff(coeffs, i, j, k, shift, dt)
 
     def update_e(self, grid, dt):
         for i in range(0, grid.num_cells[0]):
