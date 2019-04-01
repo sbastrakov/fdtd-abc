@@ -1,6 +1,7 @@
 import numpy as np
 
-class Scalar_field:
+
+class ScalarField:
     """Grid values of a single field component"""
 
     def __init__(self, min_position, max_position, num_cells, shift):

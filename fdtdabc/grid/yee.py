@@ -1,6 +1,7 @@
-from grid.scalarfield import Scalar_field
+from grid.scalar_field import ScalarField
 
 import numpy as np
+
 
 class YeeGrid:
     """Values of field components on a Yee grid. E values on middles of edges, B values on middles of faces"""
@@ -26,4 +27,4 @@ class YeeGrid:
 
     def _create_component(self, shift):
         """Create a field component with a given shift inside a cell, shift is given as list, each component in 0..1 range"""
-        return Scalar_field(self.min_position, self.max_position, self.num_cells, np.array(shift))
+        return ScalarField(self.min_position, self.max_position, self.num_cells, np.array(shift))
