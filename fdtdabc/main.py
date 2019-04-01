@@ -16,7 +16,7 @@ def init_solver():
     pml_right_width_cells = 10
     num_pml_cells_left = np.array([pml_left_width_cells, pml_left_width_cells, pml_left_width_cells])
     num_pml_cells_right = np.array([pml_right_width_cells, pml_right_width_cells, pml_right_width_cells])
-    #return cpml.Solver(num_pml_cells_left, num_pml_cells_right, 3)
+    return cpml.Solver(num_pml_cells_left, num_pml_cells_right, 3)
     return sfpml.Solver(num_pml_cells_left, num_pml_cells_right, 3, True)
     #return fdtd.Solver()
 
