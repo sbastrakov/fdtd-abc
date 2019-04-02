@@ -67,6 +67,7 @@ class Solver:
         dx = grid.steps[0]
         dy = grid.steps[1]
         dz = grid.steps[2]
+        # note to self: python does this with -1 index automatically
         i_prev = (i - 1 + grid.num_cells[0]) % grid.num_cells[0]
         j_prev = (j - 1 + grid.num_cells[1]) % grid.num_cells[1]
         k_prev = (k - 1 + grid.num_cells[2]) % grid.num_cells[2]
@@ -78,6 +79,7 @@ class Solver:
         dbz_dy = (grid.bz[i, j, k] - grid.bz[i, j_prev, k]) / dy
 
         # special case for boundary indexes in PML: the external field values are zero
+        # note to self: maybe only set a split component to 0 and not the full component
         if (i == 0) and (self.num_pml_cells_left[0] > 0):
             dby_dx = (grid.by[i, j, k] - 0.0) / dx
             dbz_dx = (grid.bz[i, j, k] - 0.0) / dx

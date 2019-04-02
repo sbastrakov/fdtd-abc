@@ -25,7 +25,7 @@ class Plot:
         #self.fig.suptitle('Iteration ' + str(iteration), fontsize=16)
         #self.images.append(self.axs[0].imshow(ey))
         #self.axs[1].imshow(bz)
-        ez = np.transpose(grid.ez[:, :, slice_z])
+        ez = np.transpose(grid.ey[:, :, slice_z])
         self.images.append([plt.imshow(ez)])
 
     def animate(self):

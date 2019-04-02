@@ -4,7 +4,7 @@ import numpy as np
 class Parameter:
     """Polynomially graded parameter of PML"""
 
-    def __init__(self, grid, num_pml_cells_left, num_pml_cells_right, inner_value, outer_value , order, grow_inner_to_outer):
+    def __init__(self, grid, num_pml_cells_left, num_pml_cells_right, inner_value, outer_value, order, grow_inner_to_outer):
         self._grid = grid
         self._num_pml_cells_left = num_pml_cells_left
         self._num_pml_cells_right = num_pml_cells_right
