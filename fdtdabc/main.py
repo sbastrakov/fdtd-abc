@@ -16,15 +16,17 @@ def init_solver():
     pml_right_width_cells = 10
     num_pml_cells_left = np.array([pml_left_width_cells, pml_left_width_cells, pml_left_width_cells])
     num_pml_cells_right = np.array([pml_right_width_cells, pml_right_width_cells, pml_right_width_cells])
-    return cpml.Solver(num_pml_cells_left, num_pml_cells_right, 3, 1.0, np.array([1.0, 1.0, 1.0]), 1.0, np.array([0.2, 0.2, 0.2]))
-    return sfpml.Solver(num_pml_cells_left, num_pml_cells_right, 3, True)
-    #return fdtd.Solver()
+    #return cpml.Solver(num_pml_cells_left, num_pml_cells_right, 3, 1.0, np.array([1.0, 1.0, 1.0]), 1.0, np.array([0.0, 0.0, 0.0]))
+    #return sfpml.Solver(num_pml_cells_left, num_pml_cells_right, 3, True)
+    return fdtd.Solver()
 
 def init_grid(solver):
     # Set up grid, for now parameters are hardcoded here
-    num_internal_cells = np.array([64, 64, 1]) # modify this
-    min_position = np.array([0.0, 0.0, 0.0])
-    max_position = np.array([1e-3, 1e-3, 1e-3]) * num_internal_cells # 1 mm each side
+    num_internal_cells = np.array([1040, 1040, 1]) # np.array([40, 40, 1])
+    steps = np.array([1e-3, 1e-3, 1e-3])
+    size = steps * num_internal_cells
+    min_position = size * -0.5
+    max_position = size * 0.5
     num_guard_cells_left, num_guard_cells_right = np.array(solver.get_guard_size(num_internal_cells)) # do not modify this
     grid = Grid(min_position, max_position, num_internal_cells, num_guard_cells_left, num_guard_cells_right)
     return grid
@@ -45,12 +47,7 @@ def add_soft_gaussian_source(grid, iteration, dt):
     i_center = grid.num_cells[0] // 2
     j_center = grid.num_cells[1] // 2
     k_center = grid.num_cells[2] // 2
-    #grid.ez[i_center, j_center, k_center] += value # not dividing by dt * eps0 here
-    i_range = range(i_center, i_center + 1) #range(grid.num_guard_cells_left[0], grid.num_internal_cells[0] + grid.num_guard_cells_left[0])
-    j_range = range(j_center, j_center + 1) #range(grid.num_guard_cells_left[1], grid.num_internal_cells[1] + grid.num_guard_cells_left[1])
-    for i in i_range:
-        for j in j_range:
-            grid.ey[i, j, k_center] += value * dt / scipy.constants.epsilon_0
+    grid.ey[i_center, j_center, k_center] += value * dt / scipy.constants.epsilon_0
 
 def add_soft_source(grid, iteration):
     duration_iterations = 10
@@ -96,16 +93,40 @@ def main():
 
     # Setup from Taflove 3rd ed. section 7.11.1
     num_iterations = 1000
-    output_period = 20 # period to make plots, set to 0 to disable plotting
+    output_period = 10 # period to make plots, set to 0 to disable plotting
 
-    energy_printer = EnergyPrinter(output_period)
-    plot = Plot(output_period)
+    source_idx = grid.num_cells // 2
+    source_position = grid.ey.position(source_idx)
+    print("source: idx = " + str(source_idx) + ", pos = " + str(source_position))
+    #point_a_idx = [grid.num_guard_cells_left[0] + 2, source_idx[1], source_idx[2]]
+    point_a_idx = [502, source_idx[1], source_idx[2]]
+    point_a_position = grid.ey.position(point_a_idx)
+    print("point a: idx = " + str(point_a_idx) + ", pos = " + str(point_a_position))
+    #point_b_idx = [grid.num_guard_cells_left[0] + 2, grid.num_guard_cells_left[1] + 2, source_idx[2]]
+    point_b_idx = [502, 502, source_idx[2]]
+    point_b_position = grid.ey.position(point_b_idx)
+    print("point b: idx = " + str(point_b_idx) + ", pos = " + str(point_b_position))
+    ey_point_a = []
+    ey_point_b = []
+
+    #energy_printer = EnergyPrinter(output_period)
+    #plot = Plot(output_period)
     for iteration in range(num_iterations):
-        energy_printer.print(grid, iteration)
-        plot.add_frame(grid, iteration)
+        if iteration % 50 == 0:
+            print("iteration = " + str(iteration))
+        ey_point_a.append(grid.ey[point_a_idx[0], point_a_idx[1], point_a_idx[2]])
+        ey_point_b.append(grid.ey[point_b_idx[0], point_b_idx[1], point_b_idx[2]])
+        #energy_printer.print(grid, iteration)
+        #plot.add_frame(grid, iteration)
         add_source(grid, iteration, dt)
         solver.run_iteration(grid, dt)
-    plot.animate()
+
+    with open("field_a_fdtd.txt", "a") as output:
+        output.write(str(ey_point_a) + "\n")
+    with open("field_b_fdtd.txt", "a") as output:
+        output.write(str(ey_point_b) + "\n")
+
+    #plot.animate()
 
 
 if __name__ == "__main__":
