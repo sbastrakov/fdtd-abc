@@ -16,13 +16,13 @@ def init_solver():
     pml_right_width_cells = 10
     num_pml_cells_left = np.array([pml_left_width_cells, pml_left_width_cells, pml_left_width_cells])
     num_pml_cells_right = np.array([pml_right_width_cells, pml_right_width_cells, pml_right_width_cells])
-    #return cpml.Solver(num_pml_cells_left, num_pml_cells_right, 3, 1.0, np.array([1.0, 1.0, 1.0]), 1.0, np.array([0.0, 0.0, 0.0]))
-    #return sfpml.Solver(num_pml_cells_left, num_pml_cells_right, 3, True)
+    return cpml.Solver(num_pml_cells_left, num_pml_cells_right, 3, 1.0, np.array([1.0, 1.0, 1.0]), 1.0, np.array([0.2, 0.2, 0.2]))
+    return sfpml.Solver(num_pml_cells_left, num_pml_cells_right, 3, True)
     return fdtd.Solver()
 
 def init_grid(solver):
     # Set up grid, for now parameters are hardcoded here
-    num_internal_cells = np.array([1040, 1040, 1]) # np.array([40, 40, 1])
+    num_internal_cells = np.array([40, 40, 1]) #np.array([1040, 1040, 1]))
     steps = np.array([1e-3, 1e-3, 1e-3])
     size = steps * num_internal_cells
     min_position = size * -0.5
@@ -39,7 +39,7 @@ def add_source(grid, iteration, dt):
 
 def add_soft_gaussian_source(grid, iteration, dt):
     # Source parameters in Taflove 3rd ed., (7.134)
-    gw = 26.53e-12 # ps
+    gw = 26.53e-12 # e-12 is ps
     td = 4 * gw
     t = iteration * dt
     normalized_t = (t - td) / gw
@@ -98,35 +98,33 @@ def main():
     source_idx = grid.num_cells // 2
     source_position = grid.ey.position(source_idx)
     print("source: idx = " + str(source_idx) + ", pos = " + str(source_position))
-    #point_a_idx = [grid.num_guard_cells_left[0] + 2, source_idx[1], source_idx[2]]
-    point_a_idx = [502, source_idx[1], source_idx[2]]
+    point_a_idx = [grid.num_guard_cells_left[0] + 2, source_idx[1], source_idx[2]]
+    ##point_a_idx = [502, source_idx[1], source_idx[2]]
     point_a_position = grid.ey.position(point_a_idx)
     print("point a: idx = " + str(point_a_idx) + ", pos = " + str(point_a_position))
-    #point_b_idx = [grid.num_guard_cells_left[0] + 2, grid.num_guard_cells_left[1] + 2, source_idx[2]]
-    point_b_idx = [502, 502, source_idx[2]]
+    point_b_idx = [grid.num_guard_cells_left[0] + 2, grid.num_guard_cells_left[1] + 2, source_idx[2]]
+    ##point_b_idx = [502, 502, source_idx[2]]
     point_b_position = grid.ey.position(point_b_idx)
     print("point b: idx = " + str(point_b_idx) + ", pos = " + str(point_b_position))
     ey_point_a = []
     ey_point_b = []
 
-    #energy_printer = EnergyPrinter(output_period)
-    #plot = Plot(output_period)
+    energy_printer = EnergyPrinter(output_period)
+    plot = Plot(output_period)
     for iteration in range(num_iterations):
         if iteration % 50 == 0:
             print("iteration = " + str(iteration))
+            with open("field_a_fdtd.txt", "a") as output:
+                output.write(str(ey_point_a) + "\n")
+            with open("field_b_fdtd.txt", "a") as output:
+                output.write(str(ey_point_b) + "\n")
         ey_point_a.append(grid.ey[point_a_idx[0], point_a_idx[1], point_a_idx[2]])
         ey_point_b.append(grid.ey[point_b_idx[0], point_b_idx[1], point_b_idx[2]])
-        #energy_printer.print(grid, iteration)
-        #plot.add_frame(grid, iteration)
+        energy_printer.print(grid, iteration)
+        plot.add_frame(grid, iteration)
         add_source(grid, iteration, dt)
         solver.run_iteration(grid, dt)
-
-    with open("field_a_fdtd.txt", "a") as output:
-        output.write(str(ey_point_a) + "\n")
-    with open("field_b_fdtd.txt", "a") as output:
-        output.write(str(ey_point_b) + "\n")
-
-    #plot.animate()
+    plot.animate()
 
 
 if __name__ == "__main__":

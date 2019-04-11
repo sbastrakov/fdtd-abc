@@ -38,9 +38,9 @@ class Printer:
 
     def _is_internal(self, grid, index):
         result = True
-        # hack for the FDTD reference setup
-        for d in range(2):
-            result = result and (index[d] >= 500) and (index[d] < 540)
-        #for d in range(3):
-            #result = result and (index[d] >= grid.num_guard_cells_left[d]) and (index[d] < grid.num_cells[d] - grid.num_guard_cells_right[d])
+        ## hack for the FDTD reference setup
+        ##for d in range(2):
+        ##    result = result and (index[d] >= 500) and (index[d] < 540)
+        for d in range(3):
+            result = result and (index[d] >= grid.num_guard_cells_left[d]) and (index[d] < grid.num_cells[d] - grid.num_guard_cells_right[d])
         return result
